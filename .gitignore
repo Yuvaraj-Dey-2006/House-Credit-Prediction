@@ -1,0 +1,48 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# VS Code
+.vscode/
+
+# Python packaging
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
+
+# Environment variables
+.env
+.env.*
+
+# Model files (optional)
+*.pkl
+*.joblib
+*.h5
+*.onnx
+
+# Dataset
+HCP Datasets/
+*.csv
+*.zip
+*.parquet
+
+# Cache
+.cache/
+.pytest_cache/
+
+# OS files
+.DS_Store
+Thumbs.db
