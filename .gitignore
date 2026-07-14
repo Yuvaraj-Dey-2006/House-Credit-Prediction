@@ -34,13 +34,12 @@ dist/
 *.onnx
 
 # Dataset
-HCP Datasets/
-*.csv
-*.zip
-*.parquet
+HCP Datasets/*.csv
+HCP Datasets/*.zip
+HCP Datasets/*.parquet
 
 # Keep Python files
-!HCP Datasets/*final_dataset_maker.py
+!HCP Datasets/*.py
 
 # Cache
 .cache/
