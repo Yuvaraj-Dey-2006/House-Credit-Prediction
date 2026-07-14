@@ -39,6 +39,10 @@ HCP Datasets/
 *.zip
 *.parquet
 
+# Keep Python files
+!HCP Datasets/
+*final_dataset_maker.py
+
 # Cache
 .cache/
 .pytest_cache/
