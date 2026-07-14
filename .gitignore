@@ -39,7 +39,7 @@ HCP Datasets/*.zip
 HCP Datasets/*.parquet
 
 # Keep Python files
-!HCP Datasets/*.py
+!HCP Datasets/*.py  
 
 # Cache
 .cache/
