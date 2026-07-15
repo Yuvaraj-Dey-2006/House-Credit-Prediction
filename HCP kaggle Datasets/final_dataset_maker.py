@@ -347,10 +347,10 @@ with Progress(
     installments_agg = aggregate_installments(data["installments_payments"])
     progress.advance(task)
 
-    # credit_card_agg = aggregate_credit_card(...)
+    # feature engineering of credit card balance
     progress.advance(task)
 
-    # pos_cash_agg = aggregate_pos_cash(...)
+    # feature engineering of POS cash balance
     progress.advance(task)
 
 console.print("\n[bold green]🎉 Feature Engineering Completed Successfully![/bold green]")
