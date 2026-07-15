@@ -57,7 +57,7 @@ def load_datasets():
 
 def aggregate_bureau(bureau_df, bureau_balance_df):
 
-    console.rule("[bold #FF7800]⚡ Bureau Feature Engineering")
+    console.rule("[bold #FF7800]⚡ Bureau Feature Engineering Started")
     
     # --------------------------------
     # Maximum Dependencies
@@ -82,8 +82,7 @@ def aggregate_bureau(bureau_df, bureau_balance_df):
     assert "SK_ID_BUREAU" in bureau_df.columns
     assert "SK_ID_BUREAU" in bureau_balance_df.columns
 
-    console.print("[bold #00FFA0]Input Dataset Summary[/bold #00FFA0]")
-
+    console.print("[bold #0080FF].....Before Feature Engineering.....\n")
     print_dataframe_info(bureau_df, "Bureau")
     print_dataframe_info(bureau_balance_df, "Bureau Balance")
 
@@ -214,63 +213,113 @@ def aggregate_bureau(bureau_df, bureau_balance_df):
 
 
 def aggregate_previous_applications(previous_application_df):
-    console.rule("[bold #FF7800]⚡ Previous Application Feature Engineering")
+    console.print("[bold #FF7800]⚡ Previous Application Feature Engineering Started")
 
-    previous_application_agg = (previous_application_df
-                                    .groupby("SK_ID_CURR", as_index=False)
-                                    .agg(
-                                          # Application Statics
-                                          prev_application_count = ("SK_ID_PREV", "count"),
-                                          prev_total_application_amoun = ("AMT_APPLICATION", "sum"),
-                                          prev_avg_application_amount = ("AMT_APPLICATION", "mean"),
-                                          prev_max_application_amount = ("AMT_APPLICATION", "max"),
+    console.print("[bold #0080FF].....Before Aggregation.....")
+    print_dataframe_info(previous_application_df, "Previous Applications")
 
-                                          # Credit Statictics
-                                          prev_total_credit = ("AMT_CREDIT", "sum"),
-                                          prev_avg_credit = ("AMT_CREDIT", "avg"),
-                                          prev_max_credit = ("AMT_CREDIT", "max"),
+    previous_application_features = (
+        previous_application_df
+            .groupby("SK_ID_CURR", as_index=False)
+            .agg(
+                # Application Statics
+                prev_application_count = ("SK_ID_PREV", "count"),
+                prev_total_application_amount = ("AMT_APPLICATION", "sum"),
+                prev_avg_application_amount = ("AMT_APPLICATION", "mean"),
+                prev_max_application_amount = ("AMT_APPLICATION", "max"),
+                # Credit Statictics
+                prev_total_credit = ("AMT_CREDIT", "sum"),
+                prev_avg_credit = ("AMT_CREDIT", "mean"),
+                prev_max_credit = ("AMT_CREDIT", "max"),
+                # Approved vs Refused
+                prev_approved_count = ("NAME_CONTRACT_STATUS", count_value("Approved")),
+                prev_refused_count = ("NAME_CONTRACT_STATUS", count_value("Refused")),
+                prev_canceled_count = ("NAME_CONTRACT_STATUS", count_value("Canceled")),
+                prev_unused_offer_count = ("NAME_CONTRACT_STATUS", count_value("Unused offer")),
+                # Loan timing,
+                prev_last_application_days = ("DAYS_DECISION", "max"),
+                prev_first_application_days = ("DAYS_DECISION", "min"),
+                prev_avg_application_days = ("DAYS_DECISION", "mean"),
+                # Down Payment,
+                prev_avg_down_payment =("AMT_DOWN_PAYMENT", "mean"),
+                prev_max_down_payment = ("AMT_DOWN_PAYMENT", "max"),
+                # Annuity
+                prev_avg_annuity = ("AMT_ANNUITY", "mean"),
+                prev_max_annuity = ("AMT_ANNUITY", "max"),
+                # Good Price
+                prev_avg_goods_price = ("AMT_GOODS_PRICE", "mean"),
+                prev_total_goods_price = ("AMT_GOODS_PRICE", "sum"),
+                # Sellar Area
+                prev_avg_seller_area = ("SELLERPLACE_AREA", "mean"),
+                # Interest/Rate
+                prev_avg_interest_primary = ("RATE_INTEREST_PRIMARY", "mean"),
+                prev_avg_interest_privileged = ("RATE_INTEREST_PRIVILEGED", "mean"),
+                # CNT Payment
+                prev_avg_payment_term = ("CNT_PAYMENT", "mean"),
+                prev_max_payment_term = ("CNT_PAYMENT", "max")
+                ))
+                
+        
+    assert previous_application_features["SK_ID_CURR"].is_unique, \
+        "Duplicate customers found after previous application aggregation!"
+    
+    console.print("[bold #0080FF].....After Aggregation.....")
+    print_dataframe_info(previous_application_features, "Previous Applications")
 
-                                          # Approved vs Refused
-                                          prev_approved_count = ("NAME_CONTRACT_STATUS", count_value("Approved")),
-                                          prev_refused_count = ("NAME_CONTRACT_STATUS", count_value("Refused")),
-                                          prev_canceled_count = ("NAME_CONTRACT_STATUS", count_value("Cancelled")),
-                                          prev_unused_offer_count = ("NAME_CONTRACT_STATUS", count_value("Unused offer")),
+    console.print("[bold green]✅ Previous Application Feature Engineering Complete")
 
-                                          # Loan timing,
-                                          prev_last_application_days = ("DAYS_DECISION", "max"),
-                                          prev_first_application_days = ("DAYS_DECISION", "min"),
-                                          prev_avg_application_days = ("DAYS_DECISION", "mean"),
+    return previous_application_features
 
-                                          # Down Payment,
-                                          prev_avg_down_payment =("AMT_DOWN_PAYMENT", "mean"),
-                                          prev_max_down_payment = ("AMT_DOWN_PAYMENT", "max"),
+def aggregate_installments(installments_df):
+    console.print("[bold #FF7800]⚡ Installments Feature Engineering Started")
 
-                                          # Annuity
-                                          prev_avg_annuity = ("AMT_ANNUITY", "mean"),
-                                          prev_max_annuity = ("AMT_ANNUITY", "max"),
+    console.print("[bold #0080FF].....Before Aggregation.....")
+    print_dataframe_info(installments_df, "Installments Payments")
 
-                                          # Good Price
-                                          prev_avg_goods_price = ("AMT_GOODS_PRICE", "mean"),
-                                          prev_total_goods_price = ("AMT_GOODS_PRICE", "sum"),
+    installments_features = (
+        installments_df
+            .groupby("SK_ID_CURR", as_index=False)
+            .agg(
+                  # Payment Amount Features
+                  inst_total_instalment = ("AMT_INSTALMENT", "sum"),
+                  inst_avg_instalment = ("AMT_INSTALMENT", "mean"),
+                  inst_max_instalment=("AMT_INSTALMENT", "max"),
+  
+                  inst_total_payment = ("AMT_PAYMENT", "sum"),
+                  inst_avg_payment = ("AMT_PAYMENT", "mean"),
+                  inst_max_payment=("AMT_PAYMENT", "max"),
+                  inst_min_payment=("AMT_PAYMENT", "min"),
 
-                                          # Sellar Area
-                                          prev_avg_seller_area = ("SELLERPLACE_AREA", "mean"),
+                  # Late Payment Features
+                  payment_delay = (installments_df["DAYS_ENTRY_PAYMENT"] - installments_df["DAYS_INSTALMENT"]),
 
-                                          # Interest/Rate
-                                          prev_avg_interest_primary = ("RATE_INTEREST_PRIMARY", "mean"),
-                                          prev_avg_interest_privileged = ("RATE_INTEREST_PRIVILEGED", "mean"),
+                  inst_avg_delay = ("payment_delay", "mean"),
+                  inst_max_delay = ("payment_delay", "max"),
+                  inst_late_payment_count = ("payment_delay", lambda x: (x > 0).sum()),
 
-                                          # CNT Payment
-                                          prev_avg_payment_term = ("CNT_PAYMENT", "mean"),
-                                          prev_max_payment_term = ("CNT_PAYMENT", "max")
-                                        )
-                               )
-    assert previous_application_agg["SK_ID_CURR"].is_unique
+                  # Underpayment Features
+                  payment_ratio = (installments_df["AMT_PAYMENT"] / installments_df["AMT_INSTALMENT"]),
 
-    console.print("[bold green]✅ Bureau Feature Engineering Complete")
+                  inst_avg_payment_ratio = ("payment_ratio", "mean"),
+                  inst_min_payment_ratio = ("payment_ratio", "min"),
+                  inst_underpaid_count = ("payment_ratio", lambda x: (x < 1).sum()),
 
-    return previous_application_agg
+                  # Installment History
+                  inst_count = ("NUM_INSTALMENT_NUMBER", "count"),
+                  inst_max_installment_number = ("NUM_INSTALMENT_NUMBER", "max")
 
+                )
+        )
+    
+    assert installments_features["SK_ID_CURR"].is_unique, \
+        "Duplicate customers found after installments payments aggregation!"
+    
+    console.print("[bold #0080FF].....After Aggregation.....")
+    print_dataframe_info(installments_features, "Installments Payments")
+
+    console.print("[bold green]✅ Installments Payments Feature Engineering Complete")
+
+    return installments_features
 
 data = load_datasets()
 
@@ -286,14 +335,16 @@ with Progress(
 
     task = progress.add_task("[#FF7800]Feature Engineering Pipeline", total=5)
 
+    # feature enginerring and merging of Bureau and Bureau balance
     bureau_agg = aggregate_bureau(data["bureau"], data["bureau_balance"])
     progress.advance(task)
 
-    # previous_agg = aggregate_previous_application(...)
+    # feature engineering of Previous application
     prev_app_agg = aggregate_previous_applications(data["previous_applications"])
     progress.advance(task)
 
-    # installment_agg = aggregate_installments(...)
+    # feature engineering of installments payments
+    installments_agg = aggregate_installments(data["installments_payments"])
     progress.advance(task)
 
     # credit_card_agg = aggregate_credit_card(...)
@@ -302,7 +353,7 @@ with Progress(
     # pos_cash_agg = aggregate_pos_cash(...)
     progress.advance(task)
 
-console.print("\n[bold green]🎉 Feature Engineering Pipeline Completed Successfully![/bold green]")
+console.print("\n[bold green]🎉 Feature Engineering Completed Successfully![/bold green]")
 
 bureau_agg = aggregate_bureau(data['bureau'], data['bureau_balance'])
 

@@ -34,12 +34,12 @@ dist/
 *.onnx
 
 # Dataset
-HCP Datasets/*.csv
-HCP Datasets/*.zip
-HCP Datasets/*.parquet
+HCP kaggle Datasets/*.csv
+HCP kaggle Datasets/*.zip
+HCP kaggle Datasets/*.parquet
 
 # Keep Python files
-!HCP Datasets/*.py  
+!HCP kaggle Datasets/*.py  
 
 # Cache
 .cache/
