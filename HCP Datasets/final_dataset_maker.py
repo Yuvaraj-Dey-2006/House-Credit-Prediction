@@ -26,6 +26,7 @@ console = Console()
 
 
 def load_datasets():
+
     # Reading the bureau.csv to dataframe
     bureau = pd.read_csv('HCP Datasets/bureau.csv')
 
@@ -52,10 +53,27 @@ def load_datasets():
         'credit_card_balance': credit_card_balance,
         'pos_cash_balance': pos_cash_balance
     }
+    
 
 def aggregate_bureau(bureau_df, bureau_balance_df):
 
     console.rule("[bold #FF7800]⚡ Bureau Feature Engineering")
+    
+    # --------------------------------
+    # Maximum Dependencies
+    # --------------------------------
+    status_map = {
+                   "0": 0,
+                   "1": 1,
+                   "2": 2,
+                   "3": 3,
+                   "4": 4,
+                   "5": 5,
+                   "C": 0,
+                   "X": 0
+                }
+    
+    bureau_balance_df["STATUS_NUM"] = bureau_balance_df["STATUS"].map(status_map)
 
     # ----------------------------
     # Validation
@@ -79,6 +97,26 @@ def aggregate_bureau(bureau_df, bureau_balance_df):
             bureau_month_min=("MONTHS_BALANCE", "min"),
             bureau_month_max=("MONTHS_BALANCE", "max"),
             bureau_month_mean=("MONTHS_BALANCE", "mean"),
+
+            #Status value count
+            status_0_count = ("STATUS", count_value("0")),
+            status_1_count = ("STATUS", count_value("1")),
+            status_2_count = ("STATUS", count_value("2")),
+            status_3_count = ("STATUS", count_value("3")),
+            status_4_count = ("STATUS", count_value("4")),
+            status_5_count = ("STATUS", count_value("5")),
+            status_C_count = ("STATUS", count_value("C")),
+            status_X_count = ("STATUS", count_value("X")),
+
+            # total overdue month
+            bureau_total_overdue = ("STATUS", lambda x: x.isin(["1", "2", "3", "4", "5"]).sum()),
+
+            # Ever defaulted
+            bureau_ever_overdue = ("STATUS", lambda x: int(x.isin(["1", "2", "3", "4", "5"]).any())),
+
+            # Closed Months
+            bureau_closed_months = ("STATUS", count_value("C"))
+
         )
     )
 
@@ -170,10 +208,69 @@ def aggregate_bureau(bureau_df, bureau_balance_df):
         "Bureau Features"
     )
 
-    console.rule("[bold green]✅ Bureau Feature Engineering Complete")
+    console.print("[bold green]✅ Bureau Feature Engineering Complete")
 
     return bureau_features
-    
+
+
+def aggregate_previous_applications(previous_application_df):
+    console.rule("[bold #FF7800]⚡ Previous Application Feature Engineering")
+
+    previous_application_agg = (previous_application_df
+                                    .groupby("SK_ID_CURR", as_index=False)
+                                    .agg(
+                                          # Application Statics
+                                          prev_application_count = ("SK_ID_PREV", "count"),
+                                          prev_total_application_amoun = ("AMT_APPLICATION", "sum"),
+                                          prev_avg_application_amount = ("AMT_APPLICATION", "mean"),
+                                          prev_max_application_amount = ("AMT_APPLICATION", "max"),
+
+                                          # Credit Statictics
+                                          prev_total_credit = ("AMT_CREDIT", "sum"),
+                                          prev_avg_credit = ("AMT_CREDIT", "avg"),
+                                          prev_max_credit = ("AMT_CREDIT", "max"),
+
+                                          # Approved vs Refused
+                                          prev_approved_count = ("NAME_CONTRACT_STATUS", count_value("Approved")),
+                                          prev_refused_count = ("NAME_CONTRACT_STATUS", count_value("Refused")),
+                                          prev_canceled_count = ("NAME_CONTRACT_STATUS", count_value("Cancelled")),
+                                          prev_unused_offer_count = ("NAME_CONTRACT_STATUS", count_value("Unused offer")),
+
+                                          # Loan timing,
+                                          prev_last_application_days = ("DAYS_DECISION", "max"),
+                                          prev_first_application_days = ("DAYS_DECISION", "min"),
+                                          prev_avg_application_days = ("DAYS_DECISION", "mean"),
+
+                                          # Down Payment,
+                                          prev_avg_down_payment =("AMT_DOWN_PAYMENT", "mean"),
+                                          prev_max_down_payment = ("AMT_DOWN_PAYMENT", "max"),
+
+                                          # Annuity
+                                          prev_avg_annuity = ("AMT_ANNUITY", "mean"),
+                                          prev_max_annuity = ("AMT_ANNUITY", "max"),
+
+                                          # Good Price
+                                          prev_avg_goods_price = ("AMT_GOODS_PRICE", "mean"),
+                                          prev_total_goods_price = ("AMT_GOODS_PRICE", "sum"),
+
+                                          # Sellar Area
+                                          prev_avg_seller_area = ("SELLERPLACE_AREA", "mean"),
+
+                                          # Interest/Rate
+                                          prev_avg_interest_primary = ("RATE_INTEREST_PRIMARY", "mean"),
+                                          prev_avg_interest_privileged = ("RATE_INTEREST_PRIVILEGED", "mean"),
+
+                                          # CNT Payment
+                                          prev_avg_payment_term = ("CNT_PAYMENT", "mean"),
+                                          prev_max_payment_term = ("CNT_PAYMENT", "max")
+                                        )
+                               )
+    assert previous_application_agg["SK_ID_CURR"].is_unique
+
+    console.print("[bold green]✅ Bureau Feature Engineering Complete")
+
+    return previous_application_agg
+
 
 data = load_datasets()
 
@@ -187,18 +284,13 @@ with Progress(
     console=console,
 ) as progress:
 
-    task = progress.add_task(
-        "[#FF7800]Feature Engineering Pipeline",
-        total=5
-    )
+    task = progress.add_task("[#FF7800]Feature Engineering Pipeline", total=5)
 
-    bureau_agg = aggregate_bureau(
-        data["bureau"],
-        data["bureau_balance"]
-    )
+    bureau_agg = aggregate_bureau(data["bureau"], data["bureau_balance"])
     progress.advance(task)
 
     # previous_agg = aggregate_previous_application(...)
+    prev_app_agg = aggregate_previous_applications(data["previous_applications"])
     progress.advance(task)
 
     # installment_agg = aggregate_installments(...)
