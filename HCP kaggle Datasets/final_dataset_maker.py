@@ -5,7 +5,14 @@ def print_dataframe_info(df, name):
     buffer = StringIO()
     df.info(buf=buffer)
 
-    console.print(f"[bold #FF7800]{name}[/bold #FF7800]")
+    console.print(f"[bold #FF7800]{name}[/bold #FF7800]\n")
+    console.print(
+        f"""
+            [cyan]Customers :[/] {len(df):,}
+            [cyan]Features  :[/] {df.shape[1]-1}
+            [cyan]Missing   :[/] {df.isna().sum().sum():,}
+        \n"""
+    )
     console.print(buffer.getvalue())
 
 
@@ -23,27 +30,31 @@ from rich.progress import (
 )
 
 console = Console()
+console.rule("\n[bold green]🏃 Feature Engineering Started Successfully![/bold grule")
 
+# =========================================
+#   CONVERTING EVERY CSVs TO DATAFRAME     |================================================================================================================
+# =========================================
 
 def load_datasets():
 
     # Reading the bureau.csv to dataframe
-    bureau = pd.read_csv('HCP Datasets/bureau.csv')
+    bureau = pd.read_csv('HCP kaggle Datasets/bureau.csv')
 
     # Reading the bureau_balance.csv to dataframe
-    bureau_balance = pd.read_csv('HCP Datasets/bureau_balance.csv')
+    bureau_balance = pd.read_csv('HCP kaggle Datasets/bureau_balance.csv')
 
     # Reading the previous_applications.csv to dataframe
-    previous_applications = pd.read_csv('HCP Datasets/previous_application.csv')
+    previous_applications = pd.read_csv('HCP kaggle Datasets/previous_application.csv')
 
     # Reading the installments_payments.csv to dataframe
-    installments_payments = pd.read_csv('HCP Datasets/installments_payments.csv')
+    installments_payments = pd.read_csv('HCP kaggle Datasets/installments_payments.csv')
 
     # Reading the credit_card_balance.csv to dataframe
-    credit_card_balance = pd.read_csv('HCP Datasets/credit_card_balance.csv')
+    credit_card_balance = pd.read_csv('HCP kaggle Datasets/credit_card_balance.csv')
 
     # Reading the POS_CASH_balance.csv to dataframe
-    pos_cash_balance = pd.read_csv('HCP Datasets/POS_CASH_balance.csv')
+    pos_cash_balance = pd.read_csv('HCP kaggle Datasets/POS_CASH_balance.csv')
 
     return {
         'bureau': bureau,
@@ -53,11 +64,15 @@ def load_datasets():
         'credit_card_balance': credit_card_balance,
         'pos_cash_balance': pos_cash_balance
     }
-    
+# ==========================================================================================================================================================   
+
+# ==============================================
+#   FEATURE ENGINNERING OF BUREAU DATASET       |===========================================================================================================
+# ==============================================
 
 def aggregate_bureau(bureau_df, bureau_balance_df):
 
-    console.rule("[bold #FF7800]⚡ Bureau Feature Engineering Started")
+    console.print("[bold #FF7800]⚡ Bureau Feature Engineering Started")
     
     # --------------------------------
     # Maximum Dependencies
@@ -107,8 +122,12 @@ def aggregate_bureau(bureau_df, bureau_balance_df):
             status_C_count = ("STATUS", count_value("C")),
             status_X_count = ("STATUS", count_value("X")),
 
+            # Status related features
+            bureau_max_status=("STATUS_NUM", "max"),
+            bureau_avg_status=("STATUS_NUM", "mean"),
+
             # total overdue month
-            bureau_total_overdue = ("STATUS", lambda x: x.isin(["1", "2", "3", "4", "5"]).sum()),
+            bureau_overdue_months = ("STATUS", lambda x: x.isin(["1", "2", "3", "4", "5"]).sum()),
 
             # Ever defaulted
             bureau_ever_overdue = ("STATUS", lambda x: int(x.isin(["1", "2", "3", "4", "5"]).any())),
@@ -119,12 +138,10 @@ def aggregate_bureau(bureau_df, bureau_balance_df):
         )
     )
 
-    assert bureau_balance_agg["SK_ID_BUREAU"].is_unique
+    assert bureau_balance_agg["SK_ID_BUREAU"].is_unique, \
+        "Duplicate SK_ID_BUREAU after aggregation."
 
-    print_dataframe_info(
-        bureau_balance_agg,
-        "Aggregated Bureau Balance"
-    )
+    print_dataframe_info(bureau_balance_agg, "Aggregated Bureau Balance")
 
     # ----------------------------
     # Merge
@@ -137,10 +154,7 @@ def aggregate_bureau(bureau_df, bureau_balance_df):
 
     assert bureau_df.shape[0] == bureau_merged.shape[0]
 
-    print_dataframe_info(
-        bureau_merged,
-        "Merged Bureau"
-    )
+    print_dataframe_info(bureau_merged, "Merged Bureau")
 
     # ----------------------------
     # Customer Aggregation
@@ -198,26 +212,32 @@ def aggregate_bureau(bureau_df, bureau_balance_df):
 
     assert bureau_features["SK_ID_CURR"].is_unique
 
-    console.print(
-        f"[bold #92FF03]Generated Features :[/bold #92FF03] {bureau_features.shape[1]-1}"
-    )
-
-    print_dataframe_info(
-        bureau_features,
-        "Bureau Features"
-    )
+    print_dataframe_info(bureau_features, "Bureau Features")
 
     console.print("[bold green]✅ Bureau Feature Engineering Complete")
 
     return bureau_features
 
+# ==========================================================================================================================================================
+
+# ==============================================================
+#   FEATURE ENGINNERING OF PREVIOUS APPLICATIONS DATASETS       |===========================================================================================
+# ==============================================================
 
 def aggregate_previous_applications(previous_application_df):
     console.print("[bold #FF7800]⚡ Previous Application Feature Engineering Started")
 
+    # --------------------------
+    #   Validation
+    # --------------------------
+    assert "SK_ID_CURR" in previous_application_df.columns
+
     console.print("[bold #0080FF].....Before Aggregation.....")
     print_dataframe_info(previous_application_df, "Previous Applications")
 
+    # ------------------------------------------
+    #   PREVIOUS APPLICATIONS AGGREGATION
+    # ------------------------------------------
     previous_application_features = (
         previous_application_df
             .groupby("SK_ID_CURR", as_index=False)
@@ -270,11 +290,33 @@ def aggregate_previous_applications(previous_application_df):
 
     return previous_application_features
 
+# ==========================================================================================================================================================
+
+# ==============================================================
+#   FEATURE ENGINNERING OF INSTALLMENTS_PAYMENTS DATASETS       |===========================================================================================
+# ==============================================================
+
 def aggregate_installments(installments_df):
     console.print("[bold #FF7800]⚡ Installments Feature Engineering Started")
 
+    # -------------------------------
+    #  Validations
+    # -------------------------------
+    assert "SK_ID_CURR" in installments_df.columns
+
     console.print("[bold #0080FF].....Before Aggregation.....")
     print_dataframe_info(installments_df, "Installments Payments")
+
+    # ------------------------------------------
+    #   Installments Payments Aggregation
+    # ------------------------------------------
+    installments_df = installments_df.copy()
+
+    # Late Payment Criteria             
+    installments_df["payment_delay"] = (installments_df["DAYS_ENTRY_PAYMENT"] - installments_df["DAYS_INSTALMENT"]),
+
+    # Underpayment Criteria
+    installments_df["payment_ratio"] = (installments_df["AMT_PAYMENT"] / installments_df["AMT_INSTALMENT"]),
 
     installments_features = (
         installments_df
@@ -291,15 +333,11 @@ def aggregate_installments(installments_df):
                   inst_min_payment=("AMT_PAYMENT", "min"),
 
                   # Late Payment Features
-                  payment_delay = (installments_df["DAYS_ENTRY_PAYMENT"] - installments_df["DAYS_INSTALMENT"]),
-
                   inst_avg_delay = ("payment_delay", "mean"),
                   inst_max_delay = ("payment_delay", "max"),
                   inst_late_payment_count = ("payment_delay", lambda x: (x > 0).sum()),
 
                   # Underpayment Features
-                  payment_ratio = (installments_df["AMT_PAYMENT"] / installments_df["AMT_INSTALMENT"]),
-
                   inst_avg_payment_ratio = ("payment_ratio", "mean"),
                   inst_min_payment_ratio = ("payment_ratio", "min"),
                   inst_underpaid_count = ("payment_ratio", lambda x: (x < 1).sum()),
@@ -320,6 +358,98 @@ def aggregate_installments(installments_df):
     console.print("[bold green]✅ Installments Payments Feature Engineering Complete")
 
     return installments_features
+
+# ==========================================================================================================================================================
+
+# ==============================================================
+#   FEATURE ENGINNERING OF INSTALLMENTS_PAYMENTS DATASETS       |===========================================================================================
+# ==============================================================
+
+def aggregate_credit_card_bal(credit_card_bal_df):
+    console.print("[bold #FF7800]⚡ Credit Card Balance Feature Engineering Started")
+
+    # -------------------------------
+    #  Validations
+    # -------------------------------
+    assert "SK_ID_CURR" in credit_card_bal_df.columns
+
+    console.print("[bold #0080FF].....Before Aggregation.....")
+    print_dataframe_info(credit_card_bal_df, "Credit Card Balance")
+
+    credit_card_df = credit_card_df.copy()
+
+    credit_card_df["credit_utilization"] = (credit_card_df["AMT_BALANCE"] / credit_card_df["AMT_CREDIT_LIMIT_ACTUAL"])
+
+    # ------------------------------------------
+    #   Credit Card Balance Aggregation
+    # ------------------------------------------
+    credit_card_features = (
+        credit_card_bal_df
+            .groupby("SK_ID_CURR", as_index=False)
+            .agg(
+                  # Number of unique credit card accounts.
+                  cc_card_count=("SK_ID_PREV", "nunique"),
+
+                  # Shows how much money the customer usually owes.
+                  cc_total_balance=("AMT_BALANCE", "sum"),
+                  cc_avg_balance=("AMT_BALANCE", "mean"),
+                  cc_max_balance=("AMT_BALANCE", "max"),
+
+                  # Credit Limit
+                  cc_avg_credit_limit=("AMT_CREDIT_LIMIT_ACTUAL", "mean"),
+                  cc_max_credit_limit=("AMT_CREDIT_LIMIT_ACTUAL", "max"),
+
+                  # Credit Utilization
+                  cc_avg_utilization=("credit_utilization", "mean"),
+                  cc_max_utilization=("credit_utilization", "max"),
+
+                  # ATM Withdrawals
+                  cc_total_atm_drawings=("AMT_DRAWINGS_ATM_CURRENT", "sum"),
+                  cc_avg_atm_drawings=("AMT_DRAWINGS_ATM_CURRENT", "mean"),
+
+                  # Total Drawings
+                  cc_total_drawings=("AMT_DRAWINGS_CURRENT", "sum"),
+                  cc_avg_drawings=("AMT_DRAWINGS_CURRENT", "mean"),
+
+                  # Payments
+                  cc_total_payment=("AMT_PAYMENT_TOTAL_CURRENT", "sum"),
+                  cc_avg_payment=("AMT_PAYMENT_TOTAL_CURRENT", "mean"),
+                  cc_max_payment=("AMT_PAYMENT_TOTAL_CURRENT", "max"),
+
+                  # Receivable Amount
+                  cc_avg_receivable=("AMT_TOTAL_RECEIVABLE", "mean"),
+                  cc_max_receivable=("AMT_TOTAL_RECEIVABLE", "max"),
+
+                  # Installments
+                  cc_avg_installment=("CNT_INSTALMENT_MATURE_CUM", "mean"),
+                  cc_max_installment=("CNT_INSTALMENT_MATURE_CUM", "max"),
+
+                  # DPD (Days Past Due)
+                  cc_avg_dpd=("SK_DPD", "mean"),
+                  cc_max_dpd=("SK_DPD", "max"),
+
+                  # Defaulters
+                  cc_late_payment_count=("SK_DPD", lambda x: (x > 0).sum()),
+
+                  # Serious Delinquency
+                  cc_serious_dpd_count=("SK_DPD_DEF", lambda x: (x > 0).sum()),
+
+                  # History length
+                  cc_oldest_record=("MONTHS_BALANCE", "min"),
+                  cc_latest_record=("MONTHS_BALANCE", "max"),
+
+                )
+        )
+    
+    assert credit_card_bal_df["SK_ID_CURR"].is_unique, \
+        "Duplicate customers found after Credit Card Balance aggregation!"
+    
+    console.print("[bold #0080FF].....After Aggregation.....")
+    print_dataframe_info(credit_card_bal_df, "Credit Card Balance")
+
+    console.print("[bold green]✅ Credit Card Balance Feature Engineering Complete")
+
+    return credit_card_bal_df
 
 data = load_datasets()
 
@@ -348,12 +478,11 @@ with Progress(
     progress.advance(task)
 
     # feature engineering of credit card balance
+    credit_card_bal_agg = aggregate_credit_card_bal(data["credit_card_balance"])
     progress.advance(task)
 
     # feature engineering of POS cash balance
     progress.advance(task)
 
-console.print("\n[bold green]🎉 Feature Engineering Completed Successfully![/bold green]")
-
-bureau_agg = aggregate_bureau(data['bureau'], data['bureau_balance'])
+console.rule("\n[bold green]🎉 Feature Engineering Completed Successfully![/bold green]")
 
