@@ -1,23 +1,13 @@
+# =========================================
+#   IMPORTING IMPORTANT MODULES            |================================================================================================================
+# =========================================
+
+import numpy as np
 import pandas as pd
 
+from pathlib import Path
+
 from io import StringIO
-def print_dataframe_info(df, name):
-    buffer = StringIO()
-    df.info(buf=buffer)
-
-    console.print(f"[bold #FF7800]{name}[/bold #FF7800]\n")
-    console.print(
-        f"""
-            [cyan]Customers :[/] {len(df):,}
-            [cyan]Features  :[/] {df.shape[1]-1}
-            [cyan]Missing   :[/] {df.isna().sum().sum():,}
-        \n"""
-    )
-    console.print(buffer.getvalue())
-
-
-def count_value(value):
-    return lambda x: (x == value).sum()
 
 from rich.console import Console
 from rich.progress import (
@@ -30,13 +20,48 @@ from rich.progress import (
 )
 
 console = Console()
-console.rule("\n[bold green]🏃 Feature Engineering Started Successfully![/bold grule")
+
+# ==========================================================================================================================================================
+
+# =========================================================
+#   FUNCTION FOR TO PRINT DATAFRAME INFORMATION            |================================================================================================================
+# =========================================================
+
+def print_dataframe_info(df, name):
+    buffer = StringIO()
+    df.info(buf=buffer)
+
+    console.print(f"[bold #FF7800]{name}[/bold #FF7800]")
+    console.print(f"""
+        [cyan]Customers :[/] {len(df):,}
+        [cyan]Features  :[/] {df.shape[1]-1}
+        [cyan]Missing   :[/] {df.isna().sum().sum():,}\n"""
+    )
+    console.print(buffer.getvalue())
+
+# ==========================================================================================================================================================================
+
+# =========================================================
+#   FUNCTION FOR TO COUNT SPECIFIC VALUE IN COLUMN         |================================================================================================================
+# =========================================================
+
+def count_value(value):
+    return lambda x: (x == value).sum()
+
+# ==========================================================================================================================================================================
+
+console.rule("[bold green]🏃 Feature Engineering Started Successfully![/bold green]")
 
 # =========================================
 #   CONVERTING EVERY CSVs TO DATAFRAME     |================================================================================================================
 # =========================================
 
 def load_datasets():
+    # Reading the application_train to dataframe
+    application_train = pd.read_csv("HCP kaggle Datasets/application_train.csv")
+
+    # Reading the application_test to dataframe
+    application_test = pd.read_csv("HCP kaggle Datasets/application_test.csv")
 
     # Reading the bureau.csv to dataframe
     bureau = pd.read_csv('HCP kaggle Datasets/bureau.csv')
@@ -57,6 +82,8 @@ def load_datasets():
     pos_cash_balance = pd.read_csv('HCP kaggle Datasets/POS_CASH_balance.csv')
 
     return {
+        'application_train': application_train,
+        'application_test': application_test,
         'bureau': bureau,
         'bureau_balance': bureau_balance,
         'previous_applications': previous_applications,
@@ -97,7 +124,7 @@ def aggregate_bureau(bureau_df, bureau_balance_df):
     assert "SK_ID_BUREAU" in bureau_df.columns
     assert "SK_ID_BUREAU" in bureau_balance_df.columns
 
-    console.print("[bold #0080FF].....Before Feature Engineering.....\n")
+    console.print("\n[bold #0080FF].....Before Feature Engineering.....")
     print_dataframe_info(bureau_df, "Bureau")
     print_dataframe_info(bureau_balance_df, "Bureau Balance")
 
@@ -146,11 +173,7 @@ def aggregate_bureau(bureau_df, bureau_balance_df):
     # ----------------------------
     # Merge
     # ----------------------------
-    bureau_merged = bureau_df.merge(
-        bureau_balance_agg,
-        how="left",
-        on="SK_ID_BUREAU",
-    )
+    bureau_merged = bureau_df.merge(bureau_balance_agg, how="left", on="SK_ID_BUREAU")
 
     assert bureau_df.shape[0] == bureau_merged.shape[0]
 
@@ -207,10 +230,24 @@ def aggregate_bureau(bureau_df, bureau_balance_df):
             bureau_total_overdue=("AMT_CREDIT_SUM_OVERDUE", "sum"),
             bureau_avg_overdue=("AMT_CREDIT_SUM_OVERDUE", "mean"),
             bureau_max_overdue=("AMT_CREDIT_SUM_OVERDUE", "max"),
-        )
-    )
+            bureau_overdue_months=("bureau_overdue_months","sum"),
+            bureau_ever_overdue=("bureau_ever_overdue","max"),
 
-    assert bureau_features["SK_ID_CURR"].is_unique
+            # Status related features
+            bureau_total_status0=("status_0_count","sum"),
+            bureau_total_status1=("status_1_count","sum"),
+            bureau_total_status2=("status_2_count","sum"),
+            bureau_total_status3=("status_3_count","sum"),
+            bureau_total_status4=("status_4_count","sum"),
+            bureau_total_status5=("status_5_count","sum"),
+
+            bureau_max_status=("bureau_max_status","max"),
+            bureau_avg_status=("bureau_avg_status","mean"),
+            bureau_closed_months=("bureau_closed_months", "sum")        
+        ))
+
+    assert bureau_features["SK_ID_CURR"].is_unique, \
+        "Duplicate customers found after bureau aggregation!"
 
     print_dataframe_info(bureau_features, "Bureau Features")
 
@@ -271,9 +308,6 @@ def aggregate_previous_applications(previous_application_df):
                 prev_total_goods_price = ("AMT_GOODS_PRICE", "sum"),
                 # Sellar Area
                 prev_avg_seller_area = ("SELLERPLACE_AREA", "mean"),
-                # Interest/Rate
-                prev_avg_interest_primary = ("RATE_INTEREST_PRIMARY", "mean"),
-                prev_avg_interest_privileged = ("RATE_INTEREST_PRIVILEGED", "mean"),
                 # CNT Payment
                 prev_avg_payment_term = ("CNT_PAYMENT", "mean"),
                 prev_max_payment_term = ("CNT_PAYMENT", "max")
@@ -313,10 +347,10 @@ def aggregate_installments(installments_df):
     installments_df = installments_df.copy()
 
     # Late Payment Criteria             
-    installments_df["payment_delay"] = (installments_df["DAYS_ENTRY_PAYMENT"] - installments_df["DAYS_INSTALMENT"]),
+    installments_df["payment_delay"] = (installments_df["DAYS_ENTRY_PAYMENT"] - installments_df["DAYS_INSTALMENT"])
 
     # Underpayment Criteria
-    installments_df["payment_ratio"] = (installments_df["AMT_PAYMENT"] / installments_df["AMT_INSTALMENT"]),
+    installments_df["payment_ratio"] = (installments_df["AMT_PAYMENT"] / installments_df["AMT_INSTALMENT"])
 
     installments_features = (
         installments_df
@@ -376,9 +410,11 @@ def aggregate_credit_card_bal(credit_card_bal_df):
     console.print("[bold #0080FF].....Before Aggregation.....")
     print_dataframe_info(credit_card_bal_df, "Credit Card Balance")
 
-    credit_card_df = credit_card_df.copy()
+    credit_card_bal_df = credit_card_bal_df.copy()
 
-    credit_card_df["credit_utilization"] = (credit_card_df["AMT_BALANCE"] / credit_card_df["AMT_CREDIT_LIMIT_ACTUAL"])
+    credit_card_bal_df["credit_utilization"] = (
+        credit_card_bal_df["AMT_BALANCE"] /credit_card_bal_df["AMT_CREDIT_LIMIT_ACTUAL"].replace(0, np.nan)
+        ).clip(lower=0, upper=5)
 
     # ------------------------------------------
     #   Credit Card Balance Aggregation
@@ -438,18 +474,90 @@ def aggregate_credit_card_bal(credit_card_bal_df):
                   cc_oldest_record=("MONTHS_BALANCE", "min"),
                   cc_latest_record=("MONTHS_BALANCE", "max"),
 
-                )
-        )
+                ))
     
-    assert credit_card_bal_df["SK_ID_CURR"].is_unique, \
+    assert credit_card_features["SK_ID_CURR"].is_unique, \
         "Duplicate customers found after Credit Card Balance aggregation!"
     
     console.print("[bold #0080FF].....After Aggregation.....")
-    print_dataframe_info(credit_card_bal_df, "Credit Card Balance")
+    print_dataframe_info(credit_card_features, "Credit Card Balance")
 
     console.print("[bold green]✅ Credit Card Balance Feature Engineering Complete")
 
-    return credit_card_bal_df
+    return credit_card_features
+
+# ==========================================================================================================================================================
+
+# ==============================================================
+#   FEATURE ENGINNERING OF INSTALLMENTS_PAYMENTS DATASETS       |===========================================================================================
+# ==============================================================
+
+def aggregate_POS_cash_bal(pos_cash_bal_df):
+    console.print("[bold #FF7800]⚡ POS Cash Balance Feature Engineering Started")
+
+    # -------------------------------
+    #  Validations
+    # -------------------------------
+    assert "SK_ID_CURR" in pos_cash_bal_df.columns
+
+    console.print("[bold #0080FF].....Before Aggregation.....")
+    print_dataframe_info(pos_cash_bal_df, "POS Cash Balance")
+
+    # ------------------------------------------
+    #   Credit Card Balance Aggregation
+    # ------------------------------------------
+    pos_features = (
+        pos_cash_bal_df
+            .groupby("SK_ID_CURR", as_index=False)
+            .agg(
+                  # Number of POS/Cash loans
+                  pos_loan_count=("SK_ID_PREV", "nunique"),
+
+                  # History Length
+                  pos_oldest_record=("MONTHS_BALANCE", "min"),
+                  pos_latest_record=("MONTHS_BALANCE", "max"),
+
+                  # Installments
+                  pos_avg_instalment=("CNT_INSTALMENT", "mean"),
+                  pos_max_instalment=("CNT_INSTALMENT", "max"),
+
+                  pos_avg_future_instalment=("CNT_INSTALMENT_FUTURE", "mean"),
+                  pos_max_future_instalment=("CNT_INSTALMENT_FUTURE", "max"),
+
+                  # DPD (Days Past Due)
+                  pos_avg_dpd=("SK_DPD", "mean"),
+                  pos_max_dpd=("SK_DPD", "max"),
+
+                  # DPD Def
+                  pos_avg_dpd_def=("SK_DPD_DEF", "mean"),
+                  pos_max_dpd_def=("SK_DPD_DEF", "max"),
+
+                  # Late Payments
+                  pos_late_payment_count=("SK_DPD", lambda x: (x > 0).sum()),
+
+                  # Serious Delinquency
+                  pos_serious_dpd_count=("SK_DPD_DEF", lambda x: (x > 0).sum()),
+
+                  # Contract Status
+                  pos_active_contracts=("NAME_CONTRACT_STATUS", count_value("Active")),
+
+                  pos_completed_contracts=("NAME_CONTRACT_STATUS", count_value("Completed")),
+
+                  pos_signed_contracts=("NAME_CONTRACT_STATUS", count_value("Signed")),
+
+                  pos_demand_contracts=("NAME_CONTRACT_STATUS", count_value("Demand")),
+                ))
+    
+    assert pos_features["SK_ID_CURR"].is_unique, \
+        "Duplicate customers found after POS Cash Balance aggregation!"
+    
+    console.print("[bold #0080FF].....After Aggregation.....")
+    print_dataframe_info(pos_features, "POS Cash Balance")
+
+    console.print("[bold green]✅ POS Cash Balance Feature Engineering Complete")
+
+    return pos_features
+
 
 data = load_datasets()
 
@@ -482,7 +590,62 @@ with Progress(
     progress.advance(task)
 
     # feature engineering of POS cash balance
+    pos_cash_bal_agg = aggregate_POS_cash_bal(data["pos_cash_balance"])
     progress.advance(task)
 
 console.rule("\n[bold green]🎉 Feature Engineering Completed Successfully![/bold green]")
 
+def merge_feature_datasets(application_df, feature_datasets):
+    console.print("[bold #FF7800]⚡ Merging Feature Datasets[/bold #FF7800]")
+
+    merged_df = application_df.copy()
+
+    console.print(f"\n[bold #0080FF]Starting Shape:[/bold #0080FF] {merged_df.shape}")
+
+    for name, feature_df in feature_datasets:
+
+        before_rows = merged_df.shape[0]
+
+        merged_df = merged_df.merge(
+            feature_df,
+            on="SK_ID_CURR",
+            how="left"
+        )
+
+        assert merged_df.shape[0] == before_rows, \
+            f"Row count changed after merging {name}"
+
+        assert merged_df["SK_ID_CURR"].is_unique, \
+            f"Duplicate SK_ID_CURR after merging {name}"
+
+        console.print(
+            f"[green]✔ {name:<25}[/green] "
+            f"Shape: {merged_df.shape}"
+        )
+
+    console.print("\n[bold green]✅ All Feature Datasets Merged Successfully[/bold green]")
+    print_dataframe_info(merged_df, "Final Dataset")
+
+    return merged_df
+
+feature_datasets = [
+    ("Bureau", bureau_agg),
+    ("Previous Applications", prev_app_agg),
+    ("Installments", installments_agg),
+    ("Credit Card", credit_card_bal_agg),
+    ("POS Cash", pos_cash_bal_agg),
+]
+
+final_train = merge_feature_datasets(data["application_train"],feature_datasets)
+
+final_test = merge_feature_datasets(data["application_test"],feature_datasets)
+
+
+
+output_dir = Path("Processed Datasets/")
+output_dir.mkdir(exist_ok=True)
+
+final_train.to_csv(output_dir / "Processed Datasets/final_train.csv", index=False)
+final_test.to_csv(output_dir / "Processed Datasets/final_test.csv", index=False)
+
+console.print("[bold green]💾 Final datasets saved successfully![/bold green]")
