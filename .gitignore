@@ -37,6 +37,7 @@ dist/
 HCP kaggle Datasets/*.csv
 HCP kaggle Datasets/*.zip
 HCP kaggle Datasets/*.parquet
+Processed Datasets/
 
 # Keep Python files
 !HCP kaggle Datasets/*.py  

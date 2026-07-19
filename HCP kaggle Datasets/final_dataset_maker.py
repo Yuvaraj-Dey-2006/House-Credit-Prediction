@@ -50,11 +50,13 @@ def count_value(value):
 
 # ==========================================================================================================================================================================
 
-console.rule("[bold green]🏃 Feature Engineering Started Successfully![/bold green]")
+
 
 # =========================================
 #   CONVERTING EVERY CSVs TO DATAFRAME     |================================================================================================================
 # =========================================
+
+console.rule("[bold green]🏃 Feature Engineering Started Successfully![/bold green]")
 
 def load_datasets():
     # Reading the application_train to dataframe
@@ -91,6 +93,7 @@ def load_datasets():
         'credit_card_balance': credit_card_balance,
         'pos_cash_balance': pos_cash_balance
     }
+
 # ==========================================================================================================================================================   
 
 # ==============================================
@@ -164,7 +167,7 @@ def aggregate_bureau(bureau_df, bureau_balance_df):
 
         )
     )
-
+    # returns an error msg if the SK_ID_BUREAU has duplicates and stops the execution
     assert bureau_balance_agg["SK_ID_BUREAU"].is_unique, \
         "Duplicate SK_ID_BUREAU after aggregation."
 
@@ -175,7 +178,8 @@ def aggregate_bureau(bureau_df, bureau_balance_df):
     # ----------------------------
     bureau_merged = bureau_df.merge(bureau_balance_agg, how="left", on="SK_ID_BUREAU")
 
-    assert bureau_df.shape[0] == bureau_merged.shape[0]
+    assert bureau_df.shape[0] == bureau_merged.shape[0], \
+        "Bureau merge produced unexpected rows. Check merge keys."
 
     print_dataframe_info(bureau_merged, "Merged Bureau")
 
@@ -251,7 +255,7 @@ def aggregate_bureau(bureau_df, bureau_balance_df):
 
     print_dataframe_info(bureau_features, "Bureau Features")
 
-    console.print("[bold green]✅ Bureau Feature Engineering Complete")
+    console.print("[bold green]✅ Bureau Feature Engineering Complete\n")
 
     return bureau_features
 
@@ -284,30 +288,38 @@ def aggregate_previous_applications(previous_application_df):
                 prev_total_application_amount = ("AMT_APPLICATION", "sum"),
                 prev_avg_application_amount = ("AMT_APPLICATION", "mean"),
                 prev_max_application_amount = ("AMT_APPLICATION", "max"),
+
                 # Credit Statictics
                 prev_total_credit = ("AMT_CREDIT", "sum"),
                 prev_avg_credit = ("AMT_CREDIT", "mean"),
                 prev_max_credit = ("AMT_CREDIT", "max"),
+
                 # Approved vs Refused
                 prev_approved_count = ("NAME_CONTRACT_STATUS", count_value("Approved")),
                 prev_refused_count = ("NAME_CONTRACT_STATUS", count_value("Refused")),
                 prev_canceled_count = ("NAME_CONTRACT_STATUS", count_value("Canceled")),
                 prev_unused_offer_count = ("NAME_CONTRACT_STATUS", count_value("Unused offer")),
+
                 # Loan timing,
                 prev_last_application_days = ("DAYS_DECISION", "max"),
                 prev_first_application_days = ("DAYS_DECISION", "min"),
                 prev_avg_application_days = ("DAYS_DECISION", "mean"),
+
                 # Down Payment,
                 prev_avg_down_payment =("AMT_DOWN_PAYMENT", "mean"),
                 prev_max_down_payment = ("AMT_DOWN_PAYMENT", "max"),
+
                 # Annuity
                 prev_avg_annuity = ("AMT_ANNUITY", "mean"),
                 prev_max_annuity = ("AMT_ANNUITY", "max"),
+
                 # Good Price
                 prev_avg_goods_price = ("AMT_GOODS_PRICE", "mean"),
                 prev_total_goods_price = ("AMT_GOODS_PRICE", "sum"),
+
                 # Sellar Area
                 prev_avg_seller_area = ("SELLERPLACE_AREA", "mean"),
+
                 # CNT Payment
                 prev_avg_payment_term = ("CNT_PAYMENT", "mean"),
                 prev_max_payment_term = ("CNT_PAYMENT", "max")
@@ -320,7 +332,7 @@ def aggregate_previous_applications(previous_application_df):
     console.print("[bold #0080FF].....After Aggregation.....")
     print_dataframe_info(previous_application_features, "Previous Applications")
 
-    console.print("[bold green]✅ Previous Application Feature Engineering Complete")
+    console.print("[bold green]✅ Previous Application Feature Engineering Complete\n")
 
     return previous_application_features
 
@@ -389,14 +401,14 @@ def aggregate_installments(installments_df):
     console.print("[bold #0080FF].....After Aggregation.....")
     print_dataframe_info(installments_features, "Installments Payments")
 
-    console.print("[bold green]✅ Installments Payments Feature Engineering Complete")
+    console.print("[bold green]✅ Installments Payments Feature Engineering Complete\n")
 
     return installments_features
 
 # ==========================================================================================================================================================
 
 # ==============================================================
-#   FEATURE ENGINNERING OF INSTALLMENTS_PAYMENTS DATASETS       |===========================================================================================
+#   FEATURE ENGINNERING OF CREDIT CARD DATASETS                 |===========================================================================================
 # ==============================================================
 
 def aggregate_credit_card_bal(credit_card_bal_df):
@@ -482,7 +494,7 @@ def aggregate_credit_card_bal(credit_card_bal_df):
     console.print("[bold #0080FF].....After Aggregation.....")
     print_dataframe_info(credit_card_features, "Credit Card Balance")
 
-    console.print("[bold green]✅ Credit Card Balance Feature Engineering Complete")
+    console.print("[bold green]✅ Credit Card Balance Feature Engineering Complete\n")
 
     return credit_card_features
 
@@ -504,7 +516,7 @@ def aggregate_POS_cash_bal(pos_cash_bal_df):
     print_dataframe_info(pos_cash_bal_df, "POS Cash Balance")
 
     # ------------------------------------------
-    #   Credit Card Balance Aggregation
+    #   POS Cash Balance Aggregation
     # ------------------------------------------
     pos_features = (
         pos_cash_bal_df
@@ -554,48 +566,17 @@ def aggregate_POS_cash_bal(pos_cash_bal_df):
     console.print("[bold #0080FF].....After Aggregation.....")
     print_dataframe_info(pos_features, "POS Cash Balance")
 
-    console.print("[bold green]✅ POS Cash Balance Feature Engineering Complete")
+    console.print("[bold green]✅ POS Cash Balance Feature Engineering Complete\n")
 
     return pos_features
 
+# ==========================================================================================================================================================
 
-data = load_datasets()
+# ==============================================================
+#   MERGING ALL DATASETS INTO TRAINING AND TESTING DATASETS     |===========================================================================================
+# ==============================================================
 
-with Progress(
-    SpinnerColumn(style="#FF7800"),
-    TextColumn("[bold cyan]{task.description}"),
-    BarColumn(bar_width=40),
-    "[progress.percentage]{task.percentage:>3.0f}%",
-    TimeElapsedColumn(),
-    TimeRemainingColumn(),
-    console=console,
-) as progress:
-
-    task = progress.add_task("[#FF7800]Feature Engineering Pipeline", total=5)
-
-    # feature enginerring and merging of Bureau and Bureau balance
-    bureau_agg = aggregate_bureau(data["bureau"], data["bureau_balance"])
-    progress.advance(task)
-
-    # feature engineering of Previous application
-    prev_app_agg = aggregate_previous_applications(data["previous_applications"])
-    progress.advance(task)
-
-    # feature engineering of installments payments
-    installments_agg = aggregate_installments(data["installments_payments"])
-    progress.advance(task)
-
-    # feature engineering of credit card balance
-    credit_card_bal_agg = aggregate_credit_card_bal(data["credit_card_balance"])
-    progress.advance(task)
-
-    # feature engineering of POS cash balance
-    pos_cash_bal_agg = aggregate_POS_cash_bal(data["pos_cash_balance"])
-    progress.advance(task)
-
-console.rule("\n[bold green]🎉 Feature Engineering Completed Successfully![/bold green]")
-
-def merge_feature_datasets(application_df, feature_datasets):
+def merge_feature_datasets(application_df, feature_datasets, dataset_name):
     console.print("[bold #FF7800]⚡ Merging Feature Datasets[/bold #FF7800]")
 
     merged_df = application_df.copy()
@@ -623,29 +604,89 @@ def merge_feature_datasets(application_df, feature_datasets):
             f"Shape: {merged_df.shape}"
         )
 
-    console.print("\n[bold green]✅ All Feature Datasets Merged Successfully[/bold green]")
-    print_dataframe_info(merged_df, "Final Dataset")
+    console.print("\n[bold green]✅ All Feature Datasets Merged Successfully[/bold green]\n")
+    print_dataframe_info(merged_df, f"Final {dataset_name} Dataset")
 
     return merged_df
 
-feature_datasets = [
-    ("Bureau", bureau_agg),
-    ("Previous Applications", prev_app_agg),
-    ("Installments", installments_agg),
-    ("Credit Card", credit_card_bal_agg),
-    ("POS Cash", pos_cash_bal_agg),
-]
+# ==========================================================================================================================================================
 
-final_train = merge_feature_datasets(data["application_train"],feature_datasets)
+# ==============================================================
+#   CALLING FUNCTION FOR PERFORMING AGGREGATION AND MERGING     |===========================================================================================
+# ==============================================================
 
-final_test = merge_feature_datasets(data["application_test"],feature_datasets)
+with Progress(
+    SpinnerColumn(style="#BDFF08"),
+    TextColumn("[bold cyan]{task.description}"),
+    BarColumn(bar_width=40),
+    "[progress.percentage]{task.percentage:>3.0f}%",
+    TimeElapsedColumn(),
+    TimeRemainingColumn(),
+    console=console,
+) as progress:
+
+    task = progress.add_task("[#BDFF08]Feature Engineering Pipeline", total=10)
+
+    # Reading all CSVs to PANDAS Dataframes
+    data = load_datasets()
+    progress.advance(task)
+
+    # feature enginerring and merging of Bureau and Bureau balance
+    progress.update(task, description="[#BDFF08]Engineering Bureau Features...")
+    bureau_agg = aggregate_bureau(data["bureau"], data["bureau_balance"])
+    progress.advance(task, advance=2)
+
+    # feature engineering of Previous application
+    progress.update(task, description="[#BDFF08]Engineering Previous Applications...")
+    prev_app_agg = aggregate_previous_applications(data["previous_applications"])
+    progress.advance(task)
+
+    # feature engineering of installments payments
+    progress.update(task, description="[#BDFF08]Engineering Installments...")
+    installments_agg = aggregate_installments(data["installments_payments"])
+    progress.advance(task)
+
+    # feature engineering of credit card balance
+    progress.update(task, description="[#BDFF08]Engineering Credit Card...")
+    credit_card_bal_agg = aggregate_credit_card_bal(data["credit_card_balance"])
+    progress.advance(task)
+
+    # feature engineering of POS cash balance
+
+    progress.update(task, description="[#BDFF08]Engineering POS Cash...")
+    pos_cash_bal_agg = aggregate_POS_cash_bal(data["pos_cash_balance"])
+    progress.advance(task)
+
+    console.rule("\n[bold green]🎉 Feature Engineering Completed Successfully![/bold green]")
+
+    feature_datasets = [
+        ("Bureau", bureau_agg),
+        ("Previous Applications", prev_app_agg),
+        ("Installments", installments_agg),
+        ("Credit Card", credit_card_bal_agg),
+        ("POS Cash", pos_cash_bal_agg),
+    ]
+
+    progress.update(task, description="[#BDFF08]Creating the Training Dataset...")
+    final_train = merge_feature_datasets(data["application_train"],feature_datasets, "Train")
+    progress.advance(task)
+
+    progress.update(task, description="[#BDFF08]Creating the Testing Dataset...")
+    final_test = merge_feature_datasets(data["application_test"],feature_datasets, "Test")
+    progress.advance(task)
 
 
+    output_dir = Path("Processed Datasets/")
+    output_dir.mkdir(exist_ok=True)
 
-output_dir = Path("Processed Datasets/")
-output_dir.mkdir(exist_ok=True)
+    final_train.to_csv(output_dir / "final_train.csv", index=False)
 
-final_train.to_csv(output_dir / "Processed Datasets/final_train.csv", index=False)
-final_test.to_csv(output_dir / "Processed Datasets/final_test.csv", index=False)
+    pd.Series(final_train.columns).to_csv(output_dir / "final_train_feature_names.csv", index=False)
+    final_test.to_csv(output_dir / "final_test.csv", index=False)
 
-console.print("[bold green]💾 Final datasets saved successfully![/bold green]")
+    pd.Series(final_train.columns).to_csv(output_dir / "final_test_feature_names.csv", index=False)
+
+    progress.update(task, description="[#BDFF08]Created Datasets Successfully...")
+    console.print("[bold green]💾 Final datasets saved successfully in [/bold green][bold underline cyan]Processed Datasets/")
+    progress.advance(task)
+# ==========================================================================================================================================================
