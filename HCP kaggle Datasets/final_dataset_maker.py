@@ -250,6 +250,10 @@ def aggregate_bureau(bureau_df, bureau_balance_df):
             bureau_closed_months=("bureau_closed_months", "sum")        
         ))
 
+    bureau_features["bureau_active_ratio"] = (
+        bureau_features["bureau_active_loans"] / bureau_features["bureau_loan_count"]
+    )
+
     assert bureau_features["SK_ID_CURR"].is_unique, \
         "Duplicate customers found after bureau aggregation!"
 
@@ -324,6 +328,13 @@ def aggregate_previous_applications(previous_application_df):
                 prev_avg_payment_term = ("CNT_PAYMENT", "mean"),
                 prev_max_payment_term = ("CNT_PAYMENT", "max")
                 ))
+    
+    previous_application_features["prev_approval_rate"] = (
+        previous_application_features["prev_approved_count"] / previous_application_features["prev_application_count"]
+    )
+    previous_application_features["prev_refusal_rate"] = (
+        previous_application_features["prev_refused_count"] / previous_application_features["prev_application_count"]
+    )
                 
         
     assert previous_application_features["SK_ID_CURR"].is_unique, \
@@ -576,6 +587,25 @@ def aggregate_POS_cash_bal(pos_cash_bal_df):
 #   MERGING ALL DATASETS INTO TRAINING AND TESTING DATASETS     |===========================================================================================
 # ==============================================================
 
+def add_application_features(df):
+    df = df.copy()
+    df['EXT_SOURCE_MEAN'] = df[['EXT_SOURCE_1','EXT_SOURCE_2','EXT_SOURCE_3']].mean(axis=1)
+    df['EXT_SOURCE_STD'] = df[['EXT_SOURCE_1','EXT_SOURCE_2','EXT_SOURCE_3']].std(axis=1)
+    df['EXT_SOURCE_PROD'] = df['EXT_SOURCE_1'] * df['EXT_SOURCE_2'] * df['EXT_SOURCE_3']
+
+    df['CREDIT_INCOME_RATIO'] = df['AMT_CREDIT'] / df['AMT_INCOME_TOTAL']
+    df['ANNUITY_INCOME_RATIO'] = df['AMT_ANNUITY'] / df['AMT_INCOME_TOTAL']
+    df['CREDIT_TERM'] = df['AMT_ANNUITY'] / df['AMT_CREDIT']
+    df['DAYS_EMPLOYED_PERC'] = df['DAYS_EMPLOYED'] / df['DAYS_BIRTH']
+
+    return df
+
+# ==========================================================================================================================================================
+
+# ==============================================================
+#   MERGING ALL DATASETS INTO TRAINING AND TESTING DATASETS     |===========================================================================================
+# ==============================================================
+
 def merge_feature_datasets(application_df, feature_datasets, dataset_name):
     console.print("[bold #FF7800]⚡ Merging Feature Datasets[/bold #FF7800]")
 
@@ -625,7 +655,7 @@ with Progress(
     console=console,
 ) as progress:
 
-    task = progress.add_task("[#BDFF08]Feature Engineering Pipeline", total=10)
+    task = progress.add_task("[#BDFF08]Feature Engineering Pipeline", total=12)
 
     # Reading all CSVs to PANDAS Dataframes
     data = load_datasets()
@@ -657,6 +687,14 @@ with Progress(
     pos_cash_bal_agg = aggregate_POS_cash_bal(data["pos_cash_balance"])
     progress.advance(task)
 
+    progress.update(task, description="[#BDFF08]Engineering extra features for Training...")
+    data['application_train'] = add_application_features(data['application_train'])
+    progress.advance(task)
+
+    progress.update(task, description="[#BDFF08]Engineering extra features for testing...")
+    data['application_test'] = add_application_features(data['application_test'])
+    progress.advance(task)
+
     console.rule("\n[bold green]🎉 Feature Engineering Completed Successfully![/bold green]")
 
     feature_datasets = [
@@ -674,7 +712,6 @@ with Progress(
     progress.update(task, description="[#BDFF08]Creating the Testing Dataset...")
     final_test = merge_feature_datasets(data["application_test"],feature_datasets, "Test")
     progress.advance(task)
-
 
     output_dir = Path("Processed Datasets/")
     output_dir.mkdir(exist_ok=True)
