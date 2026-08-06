@@ -19,11 +19,16 @@ warnings.filterwarnings('ignore')
 from sklearn.model_selection import train_test_split
 # Pipeline
 from sklearn.pipeline import Pipeline
+
+# scaling, encoding & imputing features
+from sklearn.impute import SimpleImputer
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import RobustScaler, OneHotEncoder
                                                         # ╔══╗   ╔══╗ ╔═══════╗ ╔═══════╗ ╔════════╗╔══╗     ╔═══════╗
-from sklearn.linear_model import ElasticNet             # ║  ╚╗ ╔╝  ║╔╝ ╔═══╗ ╚╗║  ╔══╗ ╚╗║ ╔══════╝║  ║     ║ ╔═════╝
-from xgboost import XGBRegressor                        # ║ ╔╗╚═╝╔╗ ║║  ║   ║  ║║  ║  ║  ║║ ╚═══╗   ║  ║     ║ ╚═════╗
-from lightgbm import LGBMRegressor                      # ║ ║╚╗ ╔╝║ ║║  ║   ║  ║║  ║  ║  ║║ ╔═══╝   ║  ║     ╚═════╗ ║
-from catboost import CatBoostRegressor                  # ║ ║ ╚═╝ ║ ║╚╗ ╚═══╝ ╔╝║  ╚══╝ ╔╝║ ╚══════╗║  ╚════╗╔═════╝ ║
+from sklearn.linear_model import LogisticRegression             # ║  ╚╗ ╔╝  ║╔╝ ╔═══╗ ╚╗║  ╔══╗ ╚╗║ ╔══════╝║  ║     ║ ╔═════╝
+from xgboost import XGBClassifier                        # ║ ╔╗╚═╝╔╗ ║║  ║   ║  ║║  ║  ║  ║║ ╚═══╗   ║  ║     ║ ╚═════╗
+from lightgbm import LGBMClassifier                      # ║ ║╚╗ ╔╝║ ║║  ║   ║  ║║  ║  ║  ║║ ╔═══╝   ║  ║     ╚═════╗ ║
+from catboost import CatBoostClassifier                 # ║ ║ ╚═╝ ║ ║╚╗ ╚═══╝ ╔╝║  ╚══╝ ╔╝║ ╚══════╗║  ╚════╗╔═════╝ ║
                                                         # ╚═╝     ╚═╝ ╚═══════╝ ╚═══════╝ ╚════════╝╚═══════╝╚═══════╝
 # hyperparametr tuner                                                        
 import optuna
@@ -77,7 +82,7 @@ target_set = train_df['TARGET']
 # Splitting is done on training dataset to get model performance
 X_train, X_eval, y_train, y_eval = train_test_split(
                                         training_features, target_set,
-                                        test_size=0.2, shuffle=True)
+                                        test_size=0.2, shuffle=True, stratify=target_set, random_state=42)
 
 datasets = {"train_df": train_df, "test_df": test_df, 
             "training_features": training_features, "testing_features": testing_features, "target_set": target_set,
@@ -262,4 +267,64 @@ for col in count_cols:
 ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚══════╝╚══════╝   ╚═╝       ╚═╝     ╚═╝  ╚═╝ ╚═════╝  ╚═════╝╚══════╝╚══════╝╚══════╝╚═╝╚═╝  ╚═══╝ ╚═════╝
 '''
 
-    
+num_cols_X_train = X_train.select_dtypes(include='numbers').columns
+category_cols_X_train = X_train.select_dtypes(include=['object', 'str']). columns
+
+num_col_pipeline_en = Pipeline([
+                            ("imputer", SimpleImputer(strategy='median')),
+                            ("scaler", RobustScaler(quantile_range=(0.25, 0.75)))
+                            ])
+
+category_col_pipeline_en = Pipeline([
+                                 ("imputer", SimpleImputer(strategy='most')),
+                                 ("encoder", OneHotEncoder(handle_unknown='ignore',
+                                                           drop='first',
+                                                           sparse_output=False))
+                                ])
+
+pp_elasticnet = ColumnTransformer(transformers=[
+                                    ("num_scale", num_col_pipeline_en, num_cols_X_train),
+                                    ("category_scale", category_col_pipeline_en, category_cols_X_train),
+                                ])
+
+pipeline_elastic_net = Pipeline([
+                                ("pp_elasticnet", pp_elasticnet),
+                                ("logreg_en__base", LogisticRegression(
+                                                                penalty='elasticnet',
+                                                                solver='saga',        # Required for elasticnet
+                                                                l1_ratio=0.5,         # 0 = L2, 1 = L1, 0.5 = mix
+                                                                C=1.0,
+                                                                max_iter=1000,
+                                                                class_weight="balanced",
+                                                                random_state=42
+                                ))
+                                ])
+
+num_col_pipeline_lgbm_xg = Pipeline([
+                            ("imputer", SimpleImputer(strategy='median')),
+                            ("scaler", RobustScaler(quantile_range=(0.25, 0.75)))
+                            ])
+
+category_col_pipeline_lgbm_xg = Pipeline([
+                                 ("imputer", SimpleImputer(strategy='most')),
+                                 ("encoder", OneHotEncoder(handle_unknown='ignore',
+                                                           sparse_output=False))
+                                ])
+
+pp_lgbm_xg = ColumnTransformer(transformers=[
+                                    ("num_scale", num_col_pipeline_lgbm_xg, num_cols_X_train),
+                                    ("category_scale", category_col_pipeline_lgbm_xg, category_cols_X_train),
+                                ])
+neg_count = (y_train == 0).sum()
+pos_count = (y_train == 1).sum()
+
+pipeline_xgb = Pipeline([
+                        ("pp_lgbm_xg", pp_lgbm_xg),
+                        "xgbc", XGBClassifier(random_state=42, eval_metric='logloss', scale_pos_weight=neg_count / pos_count)
+                        ])
+
+pipeline_lgbmc = Pipeline([
+                            ("pp_lgbm_xg", pp_lgbm_xg),
+                            ("lgbmc_base", LGBMClassifier(random_state=42, class_weight="balanced", verbose=-1))
+])
+
