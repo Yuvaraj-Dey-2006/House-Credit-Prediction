@@ -341,17 +341,19 @@ console.print(
 ██████╔╝██║  ██║   ██║   ██║  ██║███████║███████╗   ██║       ██║     ██║  ██║╚██████╔╝╚██████╗███████╗███████║███████║██║██║ ╚████║╚██████╔╝
 ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚══════╝╚══════╝   ╚═╝       ╚═╝     ╚═╝  ╚═╝ ╚═════╝  ╚═════╝╚══════╝╚══════╝╚══════╝╚═╝╚═╝  ╚═══╝ ╚═════╝
 """
-
+# list of numeric columns
 num_cols_X_train = X_train.select_dtypes(include=np.number).columns
+# list of catrgorical columns
 category_cols_X_train = X_train.select_dtypes(include=["object", "category"]).columns
 
+# pipeline for imputing and scaling numerical values for elastic net
 num_col_pipeline_en = Pipeline(
     [
         ("imputer", SimpleImputer(strategy="median")),
         ("scaler", RobustScaler(quantile_range=(0.25, 0.75))),
     ]
 )
-
+# pipeline for imputing and encoding gategorical values for elastic net
 category_col_pipeline_en = Pipeline(
     [
         ("imputer", SimpleImputer(strategy="most_frequent")),
@@ -361,7 +363,7 @@ category_col_pipeline_en = Pipeline(
         ),
     ]
 )
-
+# column trasformer pipeline for elastic net
 pp_elasticnet = ColumnTransformer(
     transformers=[
         ("num_scale", num_col_pipeline_en, num_cols_X_train),
@@ -370,11 +372,65 @@ pp_elasticnet = ColumnTransformer(
     verbose_feature_names_out=False
 )
 
+# pipeline for imputing numerical values for XG boost classifier
+num_col_pipeline_lgbm_xg = Pipeline(
+    [
+        ("imputer", SimpleImputer(strategy="median")),
+    ]
+)
+# pipeline for imputing and encoding categorical values for XG boost classifier and LGBM Classifier
+category_col_pipeline_lgbm_xg = Pipeline(
+    [
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+        ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+    ]
+)
+# column trasformer pipeline for XG boost classifier and LGBM Classifier
+pp_lgbm_xg = ColumnTransformer(
+    transformers=[
+        ("num_scale", num_col_pipeline_lgbm_xg, num_cols_X_train),
+        ("category_scale", category_col_pipeline_lgbm_xg, category_cols_X_train),
+    ],
+    verbose_feature_names_out=False
+)
+
+# count of true and false values
+neg_count = (y_train == 0).sum()
+pos_count = (y_train == 1).sum()
+
+# pipeline for imputing numerical values for Cat Boosting classifier
+num_col_pipeline_catbc = Pipeline([("imputer", SimpleImputer(strategy="median"))])
+# pipeline for imputing catgorical values for Cat Boosting classifier
+categorty_col_pipeline_catbc = Pipeline(
+    [("imputer", SimpleImputer(strategy="most_frequent"))]
+)
+
+# column trasformer pipeline for Cat Boosting classifier
+pp_catbc = ColumnTransformer(
+    transformers=[
+        ("num_scale", num_col_pipeline_catbc, num_cols_X_train),
+        ("category_scale", categorty_col_pipeline_catbc, category_cols_X_train),
+    ],
+    remainder="drop",
+    verbose_feature_names_out=False,
+)
+# setting the output of ColumnTransformer of Cat boost to pandas format
+pp_catbc.set_output(transform="pandas")
+
+"""
+██████╗  █████╗ ███████╗███████╗██╗     ██╗███╗   ██╗███████╗    ███╗   ███╗ ██████╗ ██████╗ ███████╗██╗     ███████╗
+██╔══██╗██╔══██╗██╔════╝██╔════╝██║     ██║████╗  ██║██╔════╝    ████╗ ████║██╔═══██╗██╔══██╗██╔════╝██║     ██╔════╝
+██████╔╝███████║███████╗█████╗  ██║     ██║██╔██╗ ██║█████╗      ██╔████╔██║██║   ██║██║  ██║█████╗  ██║     ███████╗
+██╔══██╗██╔══██║╚════██║██╔══╝  ██║     ██║██║╚██╗██║██╔══╝      ██║╚██╔╝██║██║   ██║██║  ██║██╔══╝  ██║     ╚════██║
+██████╔╝██║  ██║███████║███████╗███████╗██║██║ ╚████║███████╗    ██║ ╚═╝ ██║╚██████╔╝██████╔╝███████╗███████╗███████║
+╚═════╝ ╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝    ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝╚══════╝
+"""
+# pipeline for baseline elastic net model
 pipeline_elastic_net = Pipeline(
     [
         ("pp_elasticnet", pp_elasticnet),
         (
-            "logreg_en__base",
+            "en_base",
             LogisticRegression(
                 penalty="elasticnet",
                 solver="saga",  # Required for elasticnet
@@ -390,30 +446,7 @@ pipeline_elastic_net = Pipeline(
     ]
 )
 
-num_col_pipeline_lgbm_xg = Pipeline(
-    [
-        ("imputer", SimpleImputer(strategy="median")),
-    ]
-)
-
-category_col_pipeline_lgbm_xg = Pipeline(
-    [
-        ("imputer", SimpleImputer(strategy="most_frequent")),
-        ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
-    ]
-)
-
-pp_lgbm_xg = ColumnTransformer(
-    transformers=[
-        ("num_scale", num_col_pipeline_lgbm_xg, num_cols_X_train),
-        ("category_scale", category_col_pipeline_lgbm_xg, category_cols_X_train),
-    ],
-    verbose_feature_names_out=False
-)
-
-neg_count = (y_train == 0).sum()
-pos_count = (y_train == 1).sum()
-
+# pipeline for baseline XG boosting classifier model
 pipeline_xgb = Pipeline(
     [
         ("pp_lgbm_xg", pp_lgbm_xg),
@@ -431,6 +464,7 @@ pipeline_xgb = Pipeline(
     ]
 )
 
+# pipeline for baseline LGBM classifier model
 pipeline_lgbmc = Pipeline(
     [
         ("pp_lgbm_xg", pp_lgbm_xg),
@@ -446,23 +480,7 @@ pipeline_lgbmc = Pipeline(
     ]
 )
 
-num_col_pipeline_catbc = Pipeline([("imputer", SimpleImputer(strategy="median"))])
-
-categorty_col_pipeline_catbc = Pipeline(
-    [("imputer", SimpleImputer(strategy="most_frequent"))]
-)
-
-pp_catbc = ColumnTransformer(
-    transformers=[
-        ("num_scale", num_col_pipeline_catbc, num_cols_X_train),
-        ("category_scale", categorty_col_pipeline_catbc, category_cols_X_train),
-    ],
-    remainder="drop",
-    verbose_feature_names_out=False,
-)
-
-pp_catbc.set_output(transform="pandas")
-
+# pipeline for baseline Cat boosting classifier model
 pipeline_catbc = Pipeline(
     [
         ("pp_catbc", pp_catbc),
@@ -483,3 +501,85 @@ pipeline_catbc = Pipeline(
         ),
     ]
 )
+
+'''
+███╗   ███╗ ██████╗ ██████╗ ███████╗██╗         ████████╗██████╗  █████╗ ██╗███╗   ██╗██╗███╗   ██╗ ██████╗
+████╗ ████║██╔═══██╗██╔══██╗██╔════╝██║         ╚══██╔══╝██╔══██╗██╔══██╗██║████╗  ██║██║████╗  ██║██╔════╝
+██╔████╔██║██║   ██║██║  ██║█████╗  ██║            ██║   ██████╔╝███████║██║██╔██╗ ██║██║██╔██╗ ██║██║  ███╗
+██║╚██╔╝██║██║   ██║██║  ██║██╔══╝  ██║            ██║   ██╔══██╗██╔══██║██║██║╚██╗██║██║██║╚██╗██║██║   ██║
+██║ ╚═╝ ██║╚██████╔╝██████╔╝███████╗███████╗       ██║   ██║  ██║██║  ██║██║██║ ╚████║██║██║ ╚████║╚██████╔╝
+╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝       ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝╚═╝╚═╝  ╚═══╝ ╚═════╝
+'''
+
+# training the elastic net model
+pipeline_elastic_net.fit(X_train, y_train)
+# tarining the Xg boost model
+pipeline_xgb.fit(X_train, y_train)
+# training the lgb model
+pipeline_lgbmc.fit(X_train, y_train)
+# training the cat boost model
+pipeline_catbc.fit(X_train, y_train)
+
+'''
+███╗   ███╗ ██████╗ ██████╗ ███████╗██╗         ███████╗██╗   ██╗ █████╗ ██╗     ██╗   ██╗ █████╗ ████████╗██╗ ██████╗ ███╗   ██╗
+████╗ ████║██╔═══██╗██╔══██╗██╔════╝██║         ██╔════╝██║   ██║██╔══██╗██║     ██║   ██║██╔══██╗╚══██╔══╝██║██╔═══██╗████╗  ██║
+██╔████╔██║██║   ██║██║  ██║█████╗  ██║         █████╗  ██║   ██║███████║██║     ██║   ██║███████║   ██║   ██║██║   ██║██╔██╗ ██║
+██║╚██╔╝██║██║   ██║██║  ██║██╔══╝  ██║         ██╔══╝  ╚██╗ ██╔╝██╔══██║██║     ██║   ██║██╔══██║   ██║   ██║██║   ██║██║╚██╗██║
+██║ ╚═╝ ██║╚██████╔╝██████╔╝███████╗███████╗    ███████╗ ╚████╔╝ ██║  ██║███████╗╚██████╔╝██║  ██║   ██║   ██║╚██████╔╝██║ ╚████║
+╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝    ╚══════╝  ╚═══╝  ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝
+'''
+
+# prediction and prediction probability for elastic net
+y_pred_en = pipeline_elastic_net.predict(X_eval)
+y_prob_en = pipeline_elastic_net.predict_proba(X_eval)[:,1]
+
+# prediction and prediction probability for XG boosting classifier
+y_pred_xgbc = pipeline_xgb.predict(X_eval)
+y_prob_xgbc = pipeline_xgb.predict_proba(X_eval)[:,1]
+
+# prediction and prediction probability for lgb classifier
+y_pred_lgbmc = pipeline_lgbmc.predict(X_eval)
+y_prob_lgbmc = pipeline_lgbmc.predict_proba(X_eval)[:,1]
+
+# prediction and prediction probability for cat boosting classifier
+y_pred_catbc = pipeline_catbc.predict(X_eval)
+y_prob_catbc = pipeline_catbc.predict_proba(X_eval)[:,1]
+
+# base model evaluation with accuracy, precision, recall, f1, and roc-auc
+base_result_unbal = pd.DataFrame({
+                    'Models': ['Logistic Regression', 'LightGBM Classifier', 'CatBoost Classifier'],
+                    'ACCURACY': [
+                        accuracy_score(y_eval, y_pred_en),
+                        accuracy_score(y_eval, y_pred_xgbc),
+                        accuracy_score(y_eval, y_pred_lgbmc),
+                        accuracy_score(y_eval, y_pred_catbc)
+                    ],
+                    'PRECISION': [
+                        precision_score(y_eval, y_pred_en),
+                        precision_score(y_eval, y_pred_xgbc),
+                        precision_score(y_eval, y_pred_lgbmc),
+                        precision_score(y_eval, y_pred_catbc)
+                    ],
+                    'RECALL': [
+                        recall_score(y_eval, y_pred_en),
+                        recall_score(y_eval, y_pred_xgbc),
+                        recall_score(y_eval, y_pred_lgbmc),
+                        recall_score(y_eval, y_pred_catbc)
+                    ],
+                    'F1': [
+                        f1_score(y_eval, y_pred_en),
+                        f1_score(y_eval, y_pred_xgbc),
+                        f1_score(y_eval, y_pred_lgbmc),
+                        f1_score(y_eval, y_pred_catbc)
+                    ],
+                    'ROC-AUC': [
+                        roc_auc_score(y_eval, y_prob_en),
+                        roc_auc_score(y_eval, y_prob_xgbc),
+                        roc_auc_score(y_eval, y_pred_lgbmc),
+                        roc_auc_score(y_eval, y_prob_catbc)
+                    ]
+                                  })
+
+console.print("\n______________________________________ BASE MODELS PERFORMANCE (IMBALANCED CLASS) ______________________________________\n")
+console.print(base_result_unbal.round(5))
+console.print("________________________________________________________________________________________________________________________\n")
