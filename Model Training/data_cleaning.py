@@ -42,7 +42,7 @@ from xgboost import (
     XGBClassifier,
 )  
 from lightgbm import (
-    LGBMClassifier,
+    LGBMClassifier, early_stopping
 )  
 
 from catboost import (          
@@ -94,10 +94,6 @@ progress = Progress(
 
 with progress:
 
-    # ─────────────────────────────────────────────
-    # Create model tasks first
-    # ─────────────────────────────────────────────
-
     elastic_task = progress.add_task(
         "[#BDFF08]Elastic Net[/]",
         total=100,
@@ -121,10 +117,6 @@ with progress:
         total=100,
         visible=False
     )
-
-    # ─────────────────────────────────────────────
-    # Parent task MUST be created last
-    # ─────────────────────────────────────────────
 
     parent_task = progress.add_task(
         "[#C7009D]MODEL TRAINING PIPELINE[/]",
@@ -261,45 +253,6 @@ with progress:
     train_df.replace([np.inf, -np.inf], np.nan, inplace=True)
     test_df.replace([np.inf, -np.inf], np.nan, inplace=True)
 
-    # Remove impossible values
-    money_cols = [
-        col for col in train_df.columns if col.startswith("AMT_")
-    ]  
-
-    # Remove impossible counts
-    count_cols = [
-        "CNT_CHILDREN",
-        "CNT_FAM_MEMBERS",
-        "bureau_loan_count",
-        "bureau_active_loans",
-        "bureau_closed_loans",
-        "bureau_sold_loans",
-        "bureau_bad_debt_loans",
-        "bureau_credit_prolong_count",
-        "prev_application_count",
-        "prev_approved_count",
-        "prev_refused_count",
-        "prev_canceled_count",
-        "prev_unused_offer_count",
-        "inst_late_payment_count",
-        "inst_underpaid_count",
-        "inst_count",
-        "cc_card_count",
-        "cc_late_payment_count",
-        "cc_serious_dpd_count",
-        "pos_loan_count",
-        "pos_late_payment_count",
-        "pos_serious_dpd_count",
-        "pos_active_contracts",
-        "pos_completed_contracts",
-        "pos_signed_contracts",
-        "pos_demand_contracts",
-    ]
-
-    for col in count_cols:
-        if (train_df[col] < 0).any():
-            print(col, (train_df[col] < 0).sum())
-
     progress.update(parent_task, completed=25)
 
     """
@@ -307,6 +260,7 @@ with progress:
     ███    ⚠️ AS I FOUND THAT THERE ARE LOT OF FEATURES CONTAINING OUTLIERS BUT REMOVING THEM AFFECTS THE MODEL PERFORMANCE    ███
     ████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████
     """
+
     """
     ████████╗██████╗  █████╗ ██╗███╗   ██╗    ████████╗███████╗███████╗████████╗    ███████╗██████╗ ██╗     ██╗████████╗
     ╚══██╔══╝██╔══██╗██╔══██╗██║████╗  ██║    ╚══██╔══╝██╔════╝██╔════╝╚══██╔══╝    ██╔════╝██╔══██╗██║     ██║╚══██╔══╝
@@ -328,6 +282,13 @@ with progress:
     # Output feature for training
     target_set = train_df["TARGET"]
 
+    progress.update(parent_task, completed=28)
+
+    progress.update(
+        parent_task,
+        description="[blue]DATA SPLITTING[/]"
+        )
+    
     # Splitting is done on training dataset to get model performance
     X_train, X_eval, y_train, y_eval = train_test_split(
         training_features,
@@ -338,10 +299,6 @@ with progress:
         random_state=42,
     )
 
-    progress.update(
-    parent_task,
-    description="[blue]DATA SPLITTING[/]"
-    )
     progress.update(parent_task, completed=35)
 
     # storinf datasets using their name in a dict
@@ -397,6 +354,8 @@ with progress:
 
     summary_df = pd.DataFrame(summary)
 
+    progress.update(parent_task, completed=39)
+
     console.print(
         "[bold green]_____________________________________________________[/] "
         "[bold #C7009D]SUMMARY OF DATAS[/] "
@@ -439,7 +398,7 @@ with progress:
             ),
         ]
     )
-    # column trasformer pipeline for elastic net
+    # preprocessing pipeline for elastic net
     pp_elasticnet = ColumnTransformer(
         transformers=[
             ("num_scale", num_col_pipeline_en, num_cols_X_train),
@@ -461,7 +420,7 @@ with progress:
             ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=True)),
         ]
     )
-    # column trasformer pipeline for XG boost classifier 
+    # preprocessing pipeline for XG boost classifier 
     pp_xg = ColumnTransformer(
         transformers=[
             ("num_scale", num_col_pipeline_xg, num_cols_X_train),
@@ -469,7 +428,7 @@ with progress:
         ],
         verbose_feature_names_out=False
     )
-
+    # preprocessing pipeline for LGBM classifier
     pp_lgbm = ColumnTransformer(
     transformers=[
         (
@@ -485,13 +444,13 @@ with progress:
     ],
     remainder="drop",
     verbose_feature_names_out=False
-)
-
+    )
+    # setting the preprocessor lgbm output as pandas dataframe
     pp_lgbm.set_output(transform="pandas")
-
+    # Storing the preprocessed data earlier for lgbm native category identifing
     X_train_lgbm = pp_lgbm.fit_transform(X_train)
     X_eval_lgbm = pp_lgbm.transform(X_eval)
-
+    # Setting the data as category type for lgbm to distinguish
     for col in category_cols_X_train:
         X_train_lgbm[col] = X_train_lgbm[col].astype("category")
         X_eval_lgbm[col] = X_eval_lgbm[col].astype("category")
@@ -503,10 +462,7 @@ with progress:
     # pipeline for imputing numerical values for Cat Boosting classifier
     num_col_pipeline_catbc = Pipeline([("imputer", SimpleImputer(strategy="median"))])
     # pipeline for imputing catgorical values for Cat Boosting classifier
-    categorty_col_pipeline_catbc = Pipeline(
-        [("imputer", SimpleImputer(strategy="most_frequent"))]
-    )
-
+    categorty_col_pipeline_catbc = Pipeline([("imputer", SimpleImputer(strategy="most_frequent"))])
     # column trasformer pipeline for Cat Boosting classifier
     pp_catbc = ColumnTransformer(
         transformers=[
@@ -518,6 +474,13 @@ with progress:
     )
     # setting the output of ColumnTransformer of Cat boost to pandas format
     pp_catbc.set_output(transform="pandas")
+
+    X_train_catbc = pp_catbc.fit_transform(X_train)
+    X_eval_catbc = pp_catbc.transform(X_eval)
+
+    for col in category_cols_X_train:
+        X_train_catbc[col] = X_train_catbc[col].astype(str)
+        X_eval_catbc[col] = X_eval_catbc[col].astype(str)
 
     progress.update(
     parent_task,
@@ -572,14 +535,9 @@ with progress:
         ]
     )
 
-    # pipeline for baseline LGBM classifier model
-    pipeline_lgbmc = Pipeline(
-        [
-            ("pp_lgbm", pp_lgbm),
-            (
-                "lgbmc_base",
-                LGBMClassifier(
-                    n_estimators=500,
+    # baseline LGBM classifier model using native categorial identifier
+    lgbmc_base = LGBMClassifier(
+                    n_estimators=1000,
                     learning_rate=0.05,
                     num_leaves=31,
                     max_depth=-1,
@@ -589,18 +547,12 @@ with progress:
                     random_state=42,
                     verbosity=-1,
                     n_jobs=-1
-                ),
-            ),
-        ]
-    )
+                )
+
+    
 
     # pipeline for baseline Cat boosting classifier model
-    pipeline_catbc = Pipeline(
-        [
-            ("pp_catbc", pp_catbc),
-            (
-                "catbc_base",
-                CatBoostClassifier(
+    catbc_base = CatBoostClassifier(
                     iterations=1000,
                     learning_rate=0.05,
                     depth=6,
@@ -611,10 +563,7 @@ with progress:
                     verbose=0,
                     cat_features=category_cols_X_train.tolist(),
                     allow_writing_files=False,
-                ),
-            ),
-        ]
-    )
+                )
 
     '''
     ███╗   ███╗ ██████╗ ██████╗ ███████╗██╗         ████████╗██████╗  █████╗ ██╗███╗   ██╗██╗███╗   ██╗ ██████╗
@@ -676,7 +625,10 @@ with progress:
     description="[#BDFF08]LightGBM • Training...[/]"
     )
 
-    pipeline_lgbmc.fit(X_train, y_train, categorical_feature=category_cols_X_train.tolist())
+    lgbmc_base.fit(X_train_lgbm, y_train,
+                       categorical_feature=category_cols_X_train.tolist(),
+                       eval_set=[(X_eval_lgbm, y_eval)],
+                       callbacks=[early_stopping(100, verbose=False)])
 
     progress.update(
         lgbm_task,
@@ -695,7 +647,13 @@ with progress:
     description="[#BDFF08]CatBoost • Training...[/]"
 )
 
-    pipeline_catbc.fit(X_train, y_train)
+    catbc_base.fit(
+            X_train_catbc,
+            y_train,
+            cat_features=category_cols_X_train.tolist(),
+            eval_set=[(X_train_catbc, y_eval)],
+            early_stopping_rounds=100
+        )
 
     progress.update(
         catboost_task,
@@ -727,12 +685,12 @@ with progress:
     y_prob_xgbc = pipeline_xgb.predict_proba(X_eval)[:,1]
 
     # prediction and prediction probability for lgb classifier
-    y_pred_lgbmc = pipeline_lgbmc.predict(X_eval)
-    y_prob_lgbmc = pipeline_lgbmc.predict_proba(X_eval)[:,1]
+    y_pred_lgbmc = lgbmc_base.predict(X_eval_lgbm)
+    y_prob_lgbmc = lgbmc_base.predict_proba(X_eval_lgbm)[:,1]
 
     # prediction and prediction probability for cat boosting classifier
-    y_pred_catbc = pipeline_catbc.predict(X_eval)
-    y_prob_catbc = pipeline_catbc.predict_proba(X_eval)[:,1]
+    y_pred_catbc = catbc_base.predict(X_eval_catbc)
+    y_prob_catbc = catbc_base.predict_proba(X_eval_catbc)[:,1]
 
     progress.update(
     parent_task,
