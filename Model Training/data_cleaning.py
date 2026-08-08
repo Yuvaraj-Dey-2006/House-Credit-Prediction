@@ -16,8 +16,11 @@ from pathlib import Path
 import os
 import warnings
 
+from sklearn.exceptions import ConvergenceWarning
+
 warnings.filterwarnings("ignore", category=FutureWarning)
-warnings.filterwarnings("ignore", category=RuntimeWarning)   # add this line
+warnings.filterwarnings("ignore", category=RuntimeWarning)  
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
 # Train test split
 from sklearn.model_selection import train_test_split
 
@@ -673,7 +676,7 @@ with progress:
     )
 
     pipeline_xgb.fit(X_train, y_train,
-                     callbacks=[XGBRichProgress(progress, xgb_task)])
+                     xgbc__callbacks=[XGBRichProgress(progress, xgb_task)])
 
     progress.update(
         xgb_task,
