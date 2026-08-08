@@ -266,11 +266,6 @@ with progress:
         col for col in train_df.columns if col.startswith("AMT_")
     ]  
 
-    # Negative monetary values
-    for col in money_cols:
-        train_df.loc[train_df[col] < 0, col] = np.nan
-        test_df.loc[test_df[col] < 0, col] = np.nan
-
     # Remove impossible counts
     count_cols = [
         "CNT_CHILDREN",
@@ -454,26 +449,52 @@ with progress:
     )
 
     # pipeline for imputing numerical values for XG boost classifier
-    num_col_pipeline_lgbm_xg = Pipeline(
+    num_col_pipeline_xg = Pipeline(
         [
             ("imputer", SimpleImputer(strategy="median")),
         ]
     )
-    # pipeline for imputing and encoding categorical values for XG boost classifier and LGBM Classifier
-    category_col_pipeline_lgbm_xg = Pipeline(
+    # pipeline for imputing and encoding categorical values for XG boost classifier 
+    category_col_pipeline_xg = Pipeline(
         [
             ("imputer", SimpleImputer(strategy="most_frequent")),
-            ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+            ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=True)),
         ]
     )
-    # column trasformer pipeline for XG boost classifier and LGBM Classifier
-    pp_lgbm_xg = ColumnTransformer(
+    # column trasformer pipeline for XG boost classifier 
+    pp_xg = ColumnTransformer(
         transformers=[
-            ("num_scale", num_col_pipeline_lgbm_xg, num_cols_X_train),
-            ("category_scale", category_col_pipeline_lgbm_xg, category_cols_X_train),
+            ("num_scale", num_col_pipeline_xg, num_cols_X_train),
+            ("category_scale", category_col_pipeline_xg, category_cols_X_train),
         ],
         verbose_feature_names_out=False
     )
+
+    pp_lgbm = ColumnTransformer(
+    transformers=[
+        (
+            "num",
+            SimpleImputer(strategy="median"),
+            num_cols_X_train
+        ),
+        (
+            "cat",
+            SimpleImputer(strategy="most_frequent"),
+            category_cols_X_train
+        ),
+    ],
+    remainder="drop",
+    verbose_feature_names_out=False
+)
+
+    pp_lgbm.set_output(transform="pandas")
+
+    X_train_lgbm = pp_lgbm.fit_transform(X_train)
+    X_eval_lgbm = pp_lgbm.transform(X_eval)
+
+    for col in category_cols_X_train:
+        X_train_lgbm[col] = X_train_lgbm[col].astype("category")
+        X_eval_lgbm[col] = X_eval_lgbm[col].astype("category")
 
     # count of true and false values
     neg_count = (y_train == 0).sum()
@@ -536,7 +557,7 @@ with progress:
     # pipeline for baseline XG boosting classifier model
     pipeline_xgb = Pipeline(
         [
-            ("pp_lgbm_xg", pp_lgbm_xg),
+            ("pp_xg", pp_xg),
             (
                 "xgbc",
                 XGBClassifier(
@@ -554,14 +575,20 @@ with progress:
     # pipeline for baseline LGBM classifier model
     pipeline_lgbmc = Pipeline(
         [
-            ("pp_lgbm_xg", pp_lgbm_xg),
+            ("pp_lgbm", pp_lgbm),
             (
                 "lgbmc_base",
                 LGBMClassifier(
-                    n_estimators=1000,
-                    random_state=42, 
-                    scale_pos_weight = neg_count / max(pos_count, 1), 
-                    verbose=-1
+                    n_estimators=500,
+                    learning_rate=0.05,
+                    num_leaves=31,
+                    max_depth=-1,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    scale_pos_weight=neg_count / pos_count,
+                    random_state=42,
+                    verbosity=-1,
+                    n_jobs=-1
                 ),
             ),
         ]
@@ -649,7 +676,7 @@ with progress:
     description="[#BDFF08]LightGBM • Training...[/]"
     )
 
-    pipeline_lgbmc.fit(X_train, y_train)
+    pipeline_lgbmc.fit(X_train, y_train, categorical_feature=category_cols_X_train.tolist())
 
     progress.update(
         lgbm_task,
