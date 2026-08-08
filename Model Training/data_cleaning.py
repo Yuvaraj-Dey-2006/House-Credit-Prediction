@@ -35,20 +35,15 @@ from sklearn.preprocessing import RobustScaler, OneHotEncoder
 # ║ ║ ╚═╝ ║ ║╚╗ ╚═══╝ ╔╝║  ╚══╝ ╔╝║ ╚══════╗║  ╚════╗╔═════╝ ║
 # ╚═╝     ╚═╝ ╚═══════╝ ╚═══════╝ ╚════════╝╚═══════╝╚═══════╝
 
-from sklearn.linear_model import (
-    LogisticRegression,
-)  
-from xgboost import (
-    XGBClassifier,
-)  
-from lightgbm import (
-    LGBMClassifier, early_stopping
-)  
+from sklearn.linear_model import LogisticRegression 
+from xgboost import XGBClassifier  
+from lightgbm import LGBMClassifier  
 
-from catboost import (          
-    CatBoostClassifier,
-)  
+from catboost import CatBoostClassifier  
 
+from xgboost.callback import TrainingCallback
+from lightgbm import early_stopping
+from catboost import Callback
 
 # hyperparametr tuner
 import optuna
@@ -496,6 +491,11 @@ with progress:
     ██████╔╝██║  ██║███████║███████╗███████╗██║██║ ╚████║███████╗    ██║ ╚═╝ ██║╚██████╔╝██████╔╝███████╗███████╗███████║
     ╚═════╝ ╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝    ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝╚══════╝
     """
+
+    # ──────────────────────────────────────────────────────────────────────────────
+    # ElasticNet Baseline Parameters
+    # ──────────────────────────────────────────────────────────────────────────────
+
     # pipeline for baseline elastic net model
     pipeline_elastic_net = Pipeline(
         [
@@ -517,6 +517,30 @@ with progress:
         ]
     )
 
+    # ──────────────────────────────────────────────────────────────────────────────
+    # XGBoost Baseline Parameters
+    # ──────────────────────────────────────────────────────────────────────────────
+
+    # XGBoost Rich progress callback
+    class XGBRichProgress(TrainingCallback):
+
+        def __init__(self, progress, task):
+            self.progress = progress
+            self.task = task
+
+        def after_iteration(self, model, epoch, evals_log):
+            total = model.get_params().get("n_estimators", 100)
+
+            completed = min(epoch + 1, total)
+
+            self.progress.update(
+                self.task,
+                completed=completed,
+                total=total
+            )
+
+            return False
+
     # pipeline for baseline XG boosting classifier model
     pipeline_xgb = Pipeline(
         [
@@ -535,6 +559,25 @@ with progress:
         ]
     )
 
+
+
+    # ──────────────────────────────────────────────────────────────────────────────
+    # LightGBM Baseline parameters
+    # ──────────────────────────────────────────────────────────────────────────────
+
+    # LightGBM Rich progress callback
+    def lgbm_rich_progress(env):
+        if env.evaluation_result_list:
+
+            current_iteration = env.iteration + 1
+            total_iterations = env.end_iteration
+
+            progress.update(
+                lgbm_task,
+                completed=current_iteration,
+                total=total_iterations
+            )
+
     # baseline LGBM classifier model using native categorial identifier
     lgbmc_base = LGBMClassifier(
                     n_estimators=1000,
@@ -549,7 +592,28 @@ with progress:
                     n_jobs=-1
                 )
 
-    
+    # ──────────────────────────────────────────────────────────────────────────────
+    # CatBoost Baseline parameters
+    # ──────────────────────────────────────────────────────────────────────────────
+
+    # CatBoost Rich progress callback
+    class CatBoostRichProgress(Callback):
+
+        def __init__(self, progress, task, total):
+            self.progress = progress
+            self.task = task
+            self.total = total
+
+        def after_iteration(self, info):
+            iteration = info.iteration
+
+            self.progress.update(
+                self.task,
+                completed=iteration + 1,
+                total=self.total
+            )
+
+            return False    
 
     # pipeline for baseline Cat boosting classifier model
     catbc_base = CatBoostClassifier(
@@ -564,6 +628,8 @@ with progress:
                     cat_features=category_cols_X_train.tolist(),
                     allow_writing_files=False,
                 )
+
+
 
     '''
     ███╗   ███╗ ██████╗ ██████╗ ███████╗██╗         ████████╗██████╗  █████╗ ██╗███╗   ██╗██╗███╗   ██╗ ██████╗
@@ -583,7 +649,7 @@ with progress:
     progress.update(
         elastic_task,
         visible=True,
-        description="[#BDFF08]Elastic Net • Training...[/]"
+        description="[#BDFF08]Elastic Net • Fitting...[/]"
     )
 
     pipeline_elastic_net.fit(X_train, y_train)
@@ -603,10 +669,11 @@ with progress:
     progress.update(
     xgb_task,
     visible=True,
-    description="[#BDFF08]XGBoost • Training...[/]"
+    description="[#BDFF08]XGBoost • Fitting...[/]"
     )
 
-    pipeline_xgb.fit(X_train, y_train)
+    pipeline_xgb.fit(X_train, y_train,
+                     callbacks=[XGBRichProgress(progress, xgb_task)])
 
     progress.update(
         xgb_task,
@@ -622,13 +689,14 @@ with progress:
     progress.update(
     lgbm_task,
     visible=True,
-    description="[#BDFF08]LightGBM • Training...[/]"
+    description="[#BDFF08]LightGBM • Fitting...[/]"
     )
 
     lgbmc_base.fit(X_train_lgbm, y_train,
                        categorical_feature=category_cols_X_train.tolist(),
                        eval_set=[(X_eval_lgbm, y_eval)],
-                       callbacks=[early_stopping(100, verbose=False)])
+                       callbacks=[lgbm_rich_progress]
+                )
 
     progress.update(
         lgbm_task,
@@ -644,15 +712,21 @@ with progress:
     progress.update(
     catboost_task,
     visible=True,
-    description="[#BDFF08]CatBoost • Training...[/]"
+    description="[#BDFF08]CatBoost • Fitting...[/]"
 )
 
     catbc_base.fit(
             X_train_catbc,
             y_train,
             cat_features=category_cols_X_train.tolist(),
-            eval_set=[(X_train_catbc, y_eval)],
-            early_stopping_rounds=100
+            eval_set=(X_eval_catbc, y_eval),
+            callbacks=[
+                CatBoostRichProgress(
+                    progress,
+                    catboost_task,
+                    1000
+                )
+            ]
         )
 
     progress.update(
