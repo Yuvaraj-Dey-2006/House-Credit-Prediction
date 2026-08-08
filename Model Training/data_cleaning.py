@@ -43,7 +43,6 @@ from catboost import CatBoostClassifier
 
 from xgboost.callback import TrainingCallback
 from lightgbm import early_stopping
-from catboost import Callback
 
 # hyperparametr tuner
 import optuna
@@ -597,7 +596,7 @@ with progress:
     # ──────────────────────────────────────────────────────────────────────────────
 
     # CatBoost Rich progress callback
-    class CatBoostRichProgress(Callback):
+    class CatBoostRichProgress:
 
         def __init__(self, progress, task, total):
             self.progress = progress
@@ -613,7 +612,7 @@ with progress:
                 total=self.total
             )
 
-            return False    
+            return False  
 
     # pipeline for baseline Cat boosting classifier model
     catbc_base = CatBoostClassifier(
@@ -625,7 +624,6 @@ with progress:
                     auto_class_weights="balanced",
                     random_seed=42,
                     verbose=0,
-                    cat_features=category_cols_X_train.tolist(),
                     allow_writing_files=False,
                 )
 
