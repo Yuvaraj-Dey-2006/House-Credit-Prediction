@@ -17,6 +17,7 @@ import os
 import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=RuntimeWarning)   # add this line
 # Train test split
 from sklearn.model_selection import train_test_split
 
@@ -84,6 +85,7 @@ progress = Progress(
     TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
     TimeElapsedColumn(),
     TimeRemainingColumn(),
+    console=console
 )
 
 with progress:
@@ -373,7 +375,7 @@ with progress:
     # list of numeric columns
     num_cols_X_train = X_train.select_dtypes(include=np.number).columns
     # list of catrgorical columns
-    category_cols_X_train = X_train.select_dtypes(include=["object", "category"]).columns
+    category_cols_X_train = X_train.select_dtypes(include=["object", "category", "str"]).columns
 
     # pipeline for imputing and scaling numerical values for elastic net
     num_col_pipeline_en = Pipeline(
