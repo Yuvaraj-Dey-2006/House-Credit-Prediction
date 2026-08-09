@@ -19,7 +19,7 @@ import warnings
 from sklearn.exceptions import ConvergenceWarning
 
 warnings.filterwarnings("ignore", category=FutureWarning)
-warnings.filterwarnings("ignore", category=RuntimeWarning)  
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 # Train test split
 from sklearn.model_selection import train_test_split
@@ -39,11 +39,11 @@ from sklearn.preprocessing import RobustScaler, OneHotEncoder
 # ║ ║ ╚═╝ ║ ║╚╗ ╚═══╝ ╔╝║  ╚══╝ ╔╝║ ╚══════╗║  ╚════╗╔═════╝ ║
 # ╚═╝     ╚═╝ ╚═══════╝ ╚═══════╝ ╚════════╝╚═══════╝╚═══════╝
 
-from sklearn.linear_model import LogisticRegression 
-from xgboost import XGBClassifier  
-from lightgbm import LGBMClassifier  
+from sklearn.linear_model import LogisticRegression
+from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
 
-from catboost import CatBoostClassifier  
+from catboost import CatBoostClassifier
 
 from xgboost.callback import TrainingCallback
 from lightgbm import early_stopping
@@ -59,12 +59,11 @@ from sklearn.model_selection import StratifiedKFold, cross_val_score
 from sklearn.metrics import (
     accuracy_score,
     roc_auc_score,
-    roc_curve,
     precision_score,
     recall_score,
     f1_score,
-    ConfusionMatrixDisplay,
-    precision_recall_curve,
+    average_precision_score,
+    ConfusionMatrixDisplay
 )
 
 # for attractive terminal outputs
@@ -88,39 +87,22 @@ progress = Progress(
     TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
     TimeElapsedColumn(),
     TimeRemainingColumn(),
-    console=console
+    console=console,
 )
 
 with progress:
 
     elastic_task = progress.add_task(
-        "[#BDFF08]Elastic Net[/]",
-        total=100,
-        visible=False
+        "[#BDFF08]Elastic Net[/]", total=100, visible=False
     )
 
-    xgb_task = progress.add_task(
-        "[#BDFF08]XGBoost[/]",
-        total=100,
-        visible=False
-    )
+    xgb_task = progress.add_task("[#BDFF08]XGBoost[/]", total=100, visible=False)
 
-    lgbm_task = progress.add_task(
-        "[#BDFF08]LightGBM[/]",
-        total=100,
-        visible=False
-    )
+    lgbm_task = progress.add_task("[#BDFF08]LightGBM[/]", total=100, visible=False)
 
-    catboost_task = progress.add_task(
-        "[#BDFF08]CatBoost[/]",
-        total=100,
-        visible=False
-    )
+    catboost_task = progress.add_task("[#BDFF08]CatBoost[/]", total=100, visible=False)
 
-    parent_task = progress.add_task(
-        "[#C7009D]MODEL TRAINING PIPELINE[/]",
-        total=100
-    )
+    parent_task = progress.add_task("[#C7009D]MODEL TRAINING PIPELINE[/]", total=100)
 
     """
     ██████╗  █████╗ ████████╗ █████╗     ██╗      ██████╗  █████╗ ██████╗ ██╗███╗   ██╗ ██████╗
@@ -131,17 +113,20 @@ with progress:
     ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝    ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ ╚═╝╚═╝  ╚═══╝ ╚═════╝
     """
 
-    
-
-    progress.update(
-    parent_task,
-    description="[#00FFFF]DATA LOADING[/]"
-    )
+    progress.update(parent_task, description="[#00FFFF]DATA LOADING[/]")
 
     # Training dataset
     train_df = pd.read_csv(r"Processed Datasets/final_train.csv")
     # Testing dataset
     test_df = pd.read_csv(r"Processed Datasets/final_test.csv")
+
+    # Replace known sentinel values
+    train_df.loc[train_df["DAYS_EMPLOYED"] == 365243, "DAYS_EMPLOYED"] = np.nan
+    test_df.loc[test_df["DAYS_EMPLOYED"] == 365243, "DAYS_EMPLOYED"] = np.nan
+
+    # Replace infinities
+    train_df.replace([np.inf, -np.inf], np.nan, inplace=True)
+    test_df.replace([np.inf, -np.inf], np.nan, inplace=True)
 
     progress.update(parent_task, completed=10)
 
@@ -154,10 +139,7 @@ with progress:
      ╚═════╝  ╚═════╝    ╚═╝   ╚══════╝╚═╝╚══════╝╚═╝  ╚═╝    ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝╚═╝   ╚══════╝╚═╝╚══════╝
     """
 
-    progress.update(
-        parent_task,
-        description="[#00FFFF]DATA CLEANING[/]"
-    )
+    progress.update(parent_task, description="[#00FFFF]DATA CLEANING[/]")
 
     numeric_cols = train_df.select_dtypes(include="number")
 
@@ -233,8 +215,6 @@ with progress:
         "[bold green]___________________________________________________________________________________________________________________________\n\n[/]"
     )
 
-    
-
     """
     ██████╗  █████╗ ██████╗     ██████╗ ██╗   ██╗████████╗██╗     ██╗███████╗██████╗     ██████╗ ███████╗███╗   ███╗ ██████╗ ██╗   ██╗ █████╗ ██╗     
     ██╔══██╗██╔══██╗██╔══██╗   ██╔═══██╗██║   ██║╚══██╔══╝██║     ██║██╔════╝██╔══██╗    ██╔══██╗██╔════╝████╗ ████║██╔═══██╗██║   ██║██╔══██╗██║     
@@ -244,13 +224,7 @@ with progress:
     ╚═════╝ ╚═╝  ╚═╝╚═════╝     ╚═════╝  ╚═════╝    ╚═╝   ╚══════╝╚═╝╚══════╝╚═╝  ╚═╝    ╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝ ╚═════╝   ╚═══╝  ╚═╝  ╚═╝╚══════╝
     """
 
-    # Replace known sentinel values
-    train_df.loc[train_df["DAYS_EMPLOYED"] == 365243, "DAYS_EMPLOYED"] = np.nan
-    test_df.loc[test_df["DAYS_EMPLOYED"] == 365243, "DAYS_EMPLOYED"] = np.nan
 
-    # Replace infinities
-    train_df.replace([np.inf, -np.inf], np.nan, inplace=True)
-    test_df.replace([np.inf, -np.inf], np.nan, inplace=True)
 
     progress.update(parent_task, completed=25)
 
@@ -269,10 +243,7 @@ with progress:
        ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝       ╚═╝   ╚══════╝╚══════╝   ╚═╝       ╚══════╝╚═╝     ╚══════╝╚═╝   ╚═╝
     """
 
-    progress.update(
-        parent_task,
-        description="[#00FFFF]DATA SPLITTING[/]"
-        )
+    progress.update(parent_task, description="[#00FFFF]DATA SPLITTING[/]")
 
     # Input features for training
     training_features = train_df.drop(columns=["TARGET", "SK_ID_CURR"])
@@ -283,11 +254,8 @@ with progress:
 
     progress.update(parent_task, completed=28)
 
-    progress.update(
-        parent_task,
-        description="[blue]DATA SPLITTING[/]"
-        )
-    
+    progress.update(parent_task, description="[blue]DATA SPLITTING[/]")
+
     # Splitting is done on training dataset to get model performance
     X_train, X_eval, y_train, y_eval = train_test_split(
         training_features,
@@ -362,7 +330,7 @@ with progress:
     )
     console.print(summary_df)
     console.print(
-        "[bold green]____________________________________________________________________________________________________________________________[/]"
+        "[bold green]____________________________________________________________________________________________________________________________\n\n[/]"
     )
 
     progress.update(parent_task, completed=40)
@@ -375,10 +343,15 @@ with progress:
     ██████╔╝██║  ██║   ██║   ██║  ██║███████║███████╗   ██║       ██║     ██║  ██║╚██████╔╝╚██████╗███████╗███████║███████║██║██║ ╚████║╚██████╔╝
     ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚══════╝╚══════╝   ╚═╝       ╚═╝     ╚═╝  ╚═╝ ╚═════╝  ╚═════╝╚══════╝╚══════╝╚══════╝╚═╝╚═╝  ╚═══╝ ╚═════╝
     """
+
+    progress.update(parent_task, description="[magenta]PREPROCESSING PIPELINES[/]")
+
     # list of numeric columns
     num_cols_X_train = X_train.select_dtypes(include=np.number).columns
     # list of catrgorical columns
-    category_cols_X_train = X_train.select_dtypes(include=["object", "category", "str"]).columns
+    category_cols_X_train = X_train.select_dtypes(
+        include=["object", "category", "str"]
+    ).columns
 
     # pipeline for imputing and scaling numerical values for elastic net
     num_col_pipeline_en = Pipeline(
@@ -393,7 +366,9 @@ with progress:
             ("imputer", SimpleImputer(strategy="most_frequent")),
             (
                 "encoder",
-                OneHotEncoder(handle_unknown="ignore", drop="first", sparse_output=False),
+                OneHotEncoder(
+                    handle_unknown="ignore", drop="first", sparse_output=False
+                ),
             ),
         ]
     )
@@ -403,7 +378,7 @@ with progress:
             ("num_scale", num_col_pipeline_en, num_cols_X_train),
             ("category_scale", category_col_pipeline_en, category_cols_X_train),
         ],
-        verbose_feature_names_out=False
+        verbose_feature_names_out=False,
     )
 
     # pipeline for imputing numerical values for XG boost classifier
@@ -412,37 +387,29 @@ with progress:
             ("imputer", SimpleImputer(strategy="median")),
         ]
     )
-    # pipeline for imputing and encoding categorical values for XG boost classifier 
+    # pipeline for imputing and encoding categorical values for XG boost classifier
     category_col_pipeline_xg = Pipeline(
         [
             ("imputer", SimpleImputer(strategy="most_frequent")),
             ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=True)),
         ]
     )
-    # preprocessing pipeline for XG boost classifier 
+    # preprocessing pipeline for XG boost classifier
     pp_xg = ColumnTransformer(
         transformers=[
             ("num_scale", num_col_pipeline_xg, num_cols_X_train),
             ("category_scale", category_col_pipeline_xg, category_cols_X_train),
         ],
-        verbose_feature_names_out=False
+        verbose_feature_names_out=False,
     )
     # preprocessing pipeline for LGBM classifier
     pp_lgbm = ColumnTransformer(
-    transformers=[
-        (
-            "num",
-            SimpleImputer(strategy="median"),
-            num_cols_X_train
-        ),
-        (
-            "cat",
-            SimpleImputer(strategy="most_frequent"),
-            category_cols_X_train
-        ),
-    ],
-    remainder="drop",
-    verbose_feature_names_out=False
+        transformers=[
+            ("num", SimpleImputer(strategy="median"), num_cols_X_train),
+            ("cat", SimpleImputer(strategy="most_frequent"), category_cols_X_train),
+        ],
+        remainder="drop",
+        verbose_feature_names_out=False,
     )
     # setting the preprocessor lgbm output as pandas dataframe
     pp_lgbm.set_output(transform="pandas")
@@ -452,7 +419,11 @@ with progress:
     # Setting the data as category type for lgbm to distinguish
     for col in category_cols_X_train:
         X_train_lgbm[col] = X_train_lgbm[col].astype("category")
-        X_eval_lgbm[col] = X_eval_lgbm[col].astype("category")
+
+        X_eval_lgbm[col] = pd.Categorical(
+            X_eval_lgbm[col],
+            categories=X_train_lgbm[col].cat.categories
+        )
 
     # count of true and false values
     neg_count = (y_train == 0).sum()
@@ -461,7 +432,9 @@ with progress:
     # pipeline for imputing numerical values for Cat Boosting classifier
     num_col_pipeline_catbc = Pipeline([("imputer", SimpleImputer(strategy="median"))])
     # pipeline for imputing catgorical values for Cat Boosting classifier
-    categorty_col_pipeline_catbc = Pipeline([("imputer", SimpleImputer(strategy="most_frequent"))])
+    categorty_col_pipeline_catbc = Pipeline(
+        [("imputer", SimpleImputer(strategy="most_frequent"))]
+    )
     # column trasformer pipeline for Cat Boosting classifier
     pp_catbc = ColumnTransformer(
         transformers=[
@@ -481,11 +454,8 @@ with progress:
         X_train_catbc[col] = X_train_catbc[col].astype(str)
         X_eval_catbc[col] = X_eval_catbc[col].astype(str)
 
-    progress.update(
-    parent_task,
-    description="[magenta]PREPROCESSING PIPELINES[/]"
-    )
-    progress.update(parent_task, completed=45)
+    console.print("[bold green]✅ PREPROCESSING COMPLETED[/]\n\n")
+    progress.update(parent_task, completed=42)
 
     """
     ██████╗  █████╗ ███████╗███████╗██╗     ██╗███╗   ██╗███████╗    ███╗   ███╗ ██████╗ ██████╗ ███████╗██╗     ███████╗
@@ -495,6 +465,8 @@ with progress:
     ██████╔╝██║  ██║███████║███████╗███████╗██║██║ ╚████║███████╗    ██║ ╚═╝ ██║╚██████╔╝██████╔╝███████╗███████╗███████║
     ╚═════╝ ╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚═╝╚═╝  ╚═══╝╚══════╝    ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝╚══════╝
     """
+
+    progress.update(parent_task, description="[magenta]PREPARING BASELINE MODELS[/]")
 
     # ──────────────────────────────────────────────────────────────────────────────
     # ElasticNet Baseline Parameters
@@ -528,43 +500,32 @@ with progress:
     # XGBoost Rich progress callback
     class XGBRichProgress(TrainingCallback):
 
-        def __init__(self, progress, task):
+        def __init__(self, progress, task, total):
             self.progress = progress
             self.task = task
+            self.total = total
 
         def after_iteration(self, model, epoch, evals_log):
-            total = model.get_params().get("n_estimators", 100)
 
-            completed = min(epoch + 1, total)
-
-            self.progress.update(
-                self.task,
-                completed=completed,
-                total=total
-            )
+            self.progress.update(self.task, completed=epoch + 1, total=self.total)
 
             return False
 
-    # pipeline for baseline XG boosting classifier model
-    pipeline_xgb = Pipeline(
-        [
-            ("pp_xg", pp_xg),
-            (
-                "xgbc",
-                XGBClassifier(
-                    random_state=42,
-                    eval_metric="logloss",
-                    scale_pos_weight = neg_count / max(pos_count, 1),
-                    n_estimators=1000,
-                    tree_method="hist",
-                    callbacks=[XGBRichProgress(progress, xgb_task)],
-                    n_jobs=-1,
-                ),
-            ),
-        ]
-    )
+    # baseline XG boosting classifier model
+    X_train_xgb = pp_xg.fit_transform(X_train)
+    X_eval_xgb = pp_xg.transform(X_eval)
 
-
+    xgbc_base = XGBClassifier(
+            random_state=42,
+            eval_metric="auc",
+            scale_pos_weight=neg_count / max(pos_count, 1),
+            n_estimators=1000,
+            tree_method="hist",
+            callbacks=[XGBRichProgress(progress, xgb_task, 1000)],
+            early_stopping_rounds=100,
+            n_jobs=-1
+        )
+    
 
     # ──────────────────────────────────────────────────────────────────────────────
     # LightGBM Baseline parameters
@@ -578,24 +539,23 @@ with progress:
             total_iterations = env.end_iteration
 
             progress.update(
-                lgbm_task,
-                completed=current_iteration,
-                total=total_iterations
+                lgbm_task, completed=current_iteration, total=total_iterations
             )
 
     # baseline LGBM classifier model using native categorial identifier
     lgbmc_base = LGBMClassifier(
-                    n_estimators=1000,
-                    learning_rate=0.05,
-                    num_leaves=31,
-                    max_depth=-1,
-                    subsample=0.8,
-                    colsample_bytree=0.8,
-                    scale_pos_weight=neg_count / pos_count,
-                    random_state=42,
-                    verbosity=-1,
-                    n_jobs=-1
-                )
+        n_estimators=1000,
+        learning_rate=0.05,
+        metric="auc",
+        num_leaves=31,
+        max_depth=-1,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        scale_pos_weight=neg_count / pos_count,
+        random_state=42,
+        verbosity=-1,
+        n_jobs=-1,
+    )
 
     # ──────────────────────────────────────────────────────────────────────────────
     # CatBoost Baseline parameters
@@ -612,38 +572,37 @@ with progress:
         def after_iteration(self, info):
             iteration = info.iteration
 
-            self.progress.update(
-                self.task,
-                completed=iteration + 1,
-                total=self.total
-            )
+            self.progress.update(self.task, completed=iteration + 1, total=self.total)
 
-            return False  
+            return False
 
     # pipeline for baseline Cat boosting classifier model
     catbc_base = CatBoostClassifier(
-                    iterations=1000,
-                    learning_rate=0.05,
-                    depth=6,
-                    loss_function="Logloss",
-                    eval_metric="AUC",
-                    auto_class_weights="balanced",
-                    random_seed=42,
-                    verbose=0,
-                    allow_writing_files=False,
-                )
+        iterations=1000,
+        learning_rate=0.05,
+        depth=6,
+        loss_function="Logloss",
+        eval_metric="AUC",
+        auto_class_weights="Balanced",
+        random_seed=42,
+        verbose=0,
+        early_stopping_rounds=100,
+        allow_writing_files=False,
+    )
 
+    console.print(
+        "[bold green]✅ BASELINE MODELS PREPARED AND READY TO TRAIN[bold green]\n\n"
+    )
+    progress.update(parent_task, completed=45)
 
-
-    '''
+    """
     ███╗   ███╗ ██████╗ ██████╗ ███████╗██╗         ████████╗██████╗  █████╗ ██╗███╗   ██╗██╗███╗   ██╗ ██████╗
     ████╗ ████║██╔═══██╗██╔══██╗██╔════╝██║         ╚══██╔══╝██╔══██╗██╔══██╗██║████╗  ██║██║████╗  ██║██╔════╝
     ██╔████╔██║██║   ██║██║  ██║█████╗  ██║            ██║   ██████╔╝███████║██║██╔██╗ ██║██║██╔██╗ ██║██║  ███╗
     ██║╚██╔╝██║██║   ██║██║  ██║██╔══╝  ██║            ██║   ██╔══██╗██╔══██║██║██║╚██╗██║██║██║╚██╗██║██║   ██║
     ██║ ╚═╝ ██║╚██████╔╝██████╔╝███████╗███████╗       ██║   ██║  ██║██║  ██║██║██║ ╚████║██║██║ ╚████║╚██████╔╝
     ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝       ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝╚═╝╚═╝  ╚═══╝ ╚═════╝
-    '''
-
+    """
 
     # ──────────────────────────────────────────────────────────────────────────────
     # Elastic Net
@@ -651,171 +610,155 @@ with progress:
 
     # Elastic Net becomes visible
     progress.update(
-        elastic_task,
-        visible=True,
-        description="[#BDFF08]Elastic Net • Fitting...[/]"
+        elastic_task, visible=True, description="[#BDFF08]Elastic Net • Fitting...[/]"
     )
 
     pipeline_elastic_net.fit(X_train, y_train)
 
     # Elastic Net finished
     progress.update(
-        elastic_task,
-        completed=100,
-        description="[#BDFF08]Elastic Net • Complete[/]"
+        elastic_task, completed=100, description="[#BDFF08]Elastic Net • Complete[/]"
     )
-
 
     # ──────────────────────────────────────────────────────────────────────────────
     # XGBoost
     # ──────────────────────────────────────────────────────────────────────────────
 
     progress.update(
-    xgb_task,
-    visible=True,
-    description="[#BDFF08]XGBoost • Fitting...[/]"
+        xgb_task, visible=True, description="[#BDFF08]XGBoost • Fitting...[/]"
     )
 
-    pipeline_xgb.fit(X_train, y_train)
+    xgbc_base.fit(X_train_xgb, y_train,
+                  eval_set=[(X_eval_xgb, y_eval)],
+                  verbose=False)
 
     progress.update(
-        xgb_task,
-        completed=100,
-        description="[#BDFF08]XGBoost • Complete[/]"
+        xgb_task, completed=100, description="[#BDFF08]XGBoost • Complete[/]"
     )
-
 
     # ──────────────────────────────────────────────────────────────────────────────
     # LightGBM
     # ──────────────────────────────────────────────────────────────────────────────
 
     progress.update(
-    lgbm_task,
-    visible=True,
-    description="[#BDFF08]LightGBM • Fitting...[/]"
+        lgbm_task, visible=True, description="[#BDFF08]LightGBM • Fitting...[/]"
     )
 
-    lgbmc_base.fit(X_train_lgbm, y_train,
-                       categorical_feature=category_cols_X_train.tolist(),
-                       eval_set=[(X_eval_lgbm, y_eval)],
-                       callbacks=[lgbm_rich_progress]
-                )
+    lgbmc_base.fit(
+        X_train_lgbm,
+        y_train,
+        categorical_feature=category_cols_X_train.tolist(),
+        eval_set=[(X_eval_lgbm, y_eval)],
+        callbacks=[lgbm_rich_progress, early_stopping(100)],
+    )
 
     progress.update(
-        lgbm_task,
-        completed=100,
-        description="[#BDFF08]LightGBM • Complete[/]"
+        lgbm_task, completed=100, description="[#BDFF08]LightGBM • Complete[/]"
     )
-
 
     # ──────────────────────────────────────────────────────────────────────────────
     # CatBoost
     # ──────────────────────────────────────────────────────────────────────────────
 
     progress.update(
-    catboost_task,
-    visible=True,
-    description="[#BDFF08]CatBoost • Fitting...[/]"
-)
-
-    catbc_base.fit(
-            X_train_catbc,
-            y_train,
-            cat_features=category_cols_X_train.tolist(),
-            eval_set=(X_eval_catbc, y_eval),
-            callbacks=[
-                CatBoostRichProgress(
-                    progress,
-                    catboost_task,
-                    1000
-                )
-            ]
-        )
-
-    progress.update(
-        catboost_task,
-        completed=100,
-        description="[#BDFF08]CatBoost • Complete[/]"
+        catboost_task, visible=True, description="[#BDFF08]CatBoost • Fitting...[/]"
     )
 
-    '''
+    catbc_base.fit(
+        X_train_catbc,
+        y_train,
+        cat_features=category_cols_X_train.tolist(),
+        eval_set=(X_eval_catbc, y_eval),
+        callbacks=[CatBoostRichProgress(progress, catboost_task, 1000)],
+    )
+
+    progress.update(
+        catboost_task, completed=100, description="[#BDFF08]CatBoost • Complete[/]"
+    )
+
+    """
     ███╗   ███╗ ██████╗ ██████╗ ███████╗██╗         ███████╗██╗   ██╗ █████╗ ██╗     ██╗   ██╗ █████╗ ████████╗██╗ ██████╗ ███╗   ██╗
     ████╗ ████║██╔═══██╗██╔══██╗██╔════╝██║         ██╔════╝██║   ██║██╔══██╗██║     ██║   ██║██╔══██╗╚══██╔══╝██║██╔═══██╗████╗  ██║
     ██╔████╔██║██║   ██║██║  ██║█████╗  ██║         █████╗  ██║   ██║███████║██║     ██║   ██║███████║   ██║   ██║██║   ██║██╔██╗ ██║
     ██║╚██╔╝██║██║   ██║██║  ██║██╔══╝  ██║         ██╔══╝  ╚██╗ ██╔╝██╔══██║██║     ██║   ██║██╔══██║   ██║   ██║██║   ██║██║╚██╗██║
     ██║ ╚═╝ ██║╚██████╔╝██████╔╝███████╗███████╗    ███████╗ ╚████╔╝ ██║  ██║███████╗╚██████╔╝██║  ██║   ██║   ██║╚██████╔╝██║ ╚████║
     ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝    ╚══════╝  ╚═══╝  ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝
-    '''
+    """
 
     progress.update(
-    parent_task,
-    description="[yellow]MODEL EVALUATION[/]",
-    completed=80
+        parent_task, description="[yellow]MODEL EVALUATION[/]", completed=80
     )
 
     # prediction and prediction probability for elastic net
     y_pred_en = pipeline_elastic_net.predict(X_eval)
-    y_prob_en = pipeline_elastic_net.predict_proba(X_eval)[:,1]
+    y_prob_en = pipeline_elastic_net.predict_proba(X_eval)[:, 1]
 
     # prediction and prediction probability for XG boosting classifier
-    y_pred_xgbc = pipeline_xgb.predict(X_eval)
-    y_prob_xgbc = pipeline_xgb.predict_proba(X_eval)[:,1]
+    y_pred_xgbc = xgbc_base.predict(X_eval_xgb)
+    y_prob_xgbc = xgbc_base.predict_proba(X_eval_xgb)[:, 1]
 
     # prediction and prediction probability for lgb classifier
     y_pred_lgbmc = lgbmc_base.predict(X_eval_lgbm)
-    y_prob_lgbmc = lgbmc_base.predict_proba(X_eval_lgbm)[:,1]
+    y_prob_lgbmc = lgbmc_base.predict_proba(X_eval_lgbm)[:, 1]
 
     # prediction and prediction probability for cat boosting classifier
     y_pred_catbc = catbc_base.predict(X_eval_catbc)
-    y_prob_catbc = catbc_base.predict_proba(X_eval_catbc)[:,1]
+    y_prob_catbc = catbc_base.predict_proba(X_eval_catbc)[:, 1]
 
     progress.update(
-    parent_task,
-    description="[yellow]METRIC CALCULATION[/]",
-    completed=90
+        parent_task, description="[yellow]METRIC CALCULATION[/]", completed=90
     )
 
     # base model evaluation with accuracy, precision, recall, f1, and roc-auc
-    base_result = pd.DataFrame({
-                        'Models': ['Elastic Net log reg.', 'XG Boost Classifier', 'LightGBM Classifier', 'CatBoost Classifier'],
-                        'ACCURACY': [
-                            accuracy_score(y_eval, y_pred_en),
-                            accuracy_score(y_eval, y_pred_xgbc),
-                            accuracy_score(y_eval, y_pred_lgbmc),
-                            accuracy_score(y_eval, y_pred_catbc)
-                        ],
-                        'PRECISION': [
-                            precision_score(y_eval, y_pred_en),
-                            precision_score(y_eval, y_pred_xgbc),
-                            precision_score(y_eval, y_pred_lgbmc),
-                            precision_score(y_eval, y_pred_catbc)
-                        ],
-                        'RECALL': [
-                            recall_score(y_eval, y_pred_en),
-                            recall_score(y_eval, y_pred_xgbc),
-                            recall_score(y_eval, y_pred_lgbmc),
-                            recall_score(y_eval, y_pred_catbc)
-                        ],
-                        'F1': [
-                            f1_score(y_eval, y_pred_en),
-                            f1_score(y_eval, y_pred_xgbc),
-                            f1_score(y_eval, y_pred_lgbmc),
-                            f1_score(y_eval, y_pred_catbc)
-                        ],
-                        'ROC-AUC': [
-                            roc_auc_score(y_eval, y_prob_en),
-                            roc_auc_score(y_eval, y_prob_xgbc),
-                            roc_auc_score(y_eval, y_prob_lgbmc),
-                            roc_auc_score(y_eval, y_prob_catbc)
-                        ]
-                                      })
+    base_result = pd.DataFrame(
+        {
+            "Models": [
+                "Elastic Net log reg.",
+                "XG Boost Classifier",
+                "LightGBM Classifier",
+                "CatBoost Classifier",
+            ],
+            "ACCURACY": [
+                accuracy_score(y_eval, y_pred_en),
+                accuracy_score(y_eval, y_pred_xgbc),
+                accuracy_score(y_eval, y_pred_lgbmc),
+                accuracy_score(y_eval, y_pred_catbc),
+            ],
+            "PRECISION": [
+                precision_score(y_eval, y_pred_en),
+                precision_score(y_eval, y_pred_xgbc),
+                precision_score(y_eval, y_pred_lgbmc),
+                precision_score(y_eval, y_pred_catbc),
+            ],
+            "RECALL": [
+                recall_score(y_eval, y_pred_en),
+                recall_score(y_eval, y_pred_xgbc),
+                recall_score(y_eval, y_pred_lgbmc),
+                recall_score(y_eval, y_pred_catbc),
+            ],
+            "F1": [
+                f1_score(y_eval, y_pred_en),
+                f1_score(y_eval, y_pred_xgbc),
+                f1_score(y_eval, y_pred_lgbmc),
+                f1_score(y_eval, y_pred_catbc),
+            ],
+            "ROC-AUC": [
+                roc_auc_score(y_eval, y_prob_en),
+                roc_auc_score(y_eval, y_prob_xgbc),
+                roc_auc_score(y_eval, y_prob_lgbmc),
+                roc_auc_score(y_eval, y_prob_catbc),
+            ],
+        }
+    )
 
-    console.print("\n______________________________________ BASE MODELS PERFORMANCE (IMBALANCED CLASS) ______________________________________\n")
+    console.print(
+        "\n______________________________________ BASE MODELS PERFORMANCE (IMBALANCED CLASS) ______________________________________\n"
+    )
     console.print(base_result.round(5))
-    console.print("________________________________________________________________________________________________________________________\n")
+    console.print(
+        "________________________________________________________________________________________________________________________\n"
+    )
 
     progress.update(
-    parent_task,
-    description="[green]MODEL EVALUATION COMPLETE[/]",
-    completed=100
+        parent_task, description="[green]MODEL EVALUATION COMPLETE[/]", completed=100
     )
