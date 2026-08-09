@@ -557,6 +557,7 @@ with progress:
                     scale_pos_weight = neg_count / max(pos_count, 1),
                     n_estimators=1000,
                     tree_method="hist",
+                    callbacks=[XGBRichProgress(progress, xgb_task)],
                     n_jobs=-1,
                 ),
             ),
@@ -624,7 +625,7 @@ with progress:
                     iterations=1000,
                     learning_rate=0.05,
                     depth=6,
-                    loss_function="logloss",
+                    loss_function="Logloss",
                     eval_metric="AUC",
                     auto_class_weights="balanced",
                     random_seed=42,
@@ -675,8 +676,7 @@ with progress:
     description="[#BDFF08]XGBoost • Fitting...[/]"
     )
 
-    pipeline_xgb.fit(X_train, y_train,
-                     xgbc__callbacks=[XGBRichProgress(progress, xgb_task)])
+    pipeline_xgb.fit(X_train, y_train)
 
     progress.update(
         xgb_task,
