@@ -499,16 +499,14 @@ with progress:
 
     # XGBoost Rich progress callback
     class XGBRichProgress(TrainingCallback):
-
         def __init__(self, progress, task, total):
             self.progress = progress
             self.task = task
-            self.total = total
+            self.total = total  # this is 1000, the max possible rounds — used only for the % calc
 
         def after_iteration(self, model, epoch, evals_log):
-
-            self.progress.update(self.task, completed=epoch + 1, total=self.total)
-
+            pct = min((epoch + 1) / self.total * 100, 100)
+            self.progress.update(self.task, completed=pct)  # total is untouched, stays 100
             return False
 
     # baseline XG boosting classifier model
@@ -522,7 +520,7 @@ with progress:
             n_estimators=1000,
             tree_method="hist",
             callbacks=[XGBRichProgress(progress, xgb_task, 1000)],
-            early_stopping_rounds=100,
+            early_stopping_rounds=200,
             n_jobs=-1
         )
     
@@ -534,13 +532,8 @@ with progress:
     # LightGBM Rich progress callback
     def lgbm_rich_progress(env):
         if env.evaluation_result_list:
-
-            current_iteration = env.iteration + 1
-            total_iterations = env.end_iteration
-
-            progress.update(
-                lgbm_task, completed=current_iteration, total=total_iterations
-            )
+            pct = min((env.iteration + 1) / env.end_iteration * 100, 100)
+            progress.update(lgbm_task, completed=pct)
 
     # baseline LGBM classifier model using native categorial identifier
     lgbmc_base = LGBMClassifier(
@@ -563,17 +556,14 @@ with progress:
 
     # CatBoost Rich progress callback
     class CatBoostRichProgress:
-
         def __init__(self, progress, task, total):
             self.progress = progress
             self.task = task
             self.total = total
 
         def after_iteration(self, info):
-            iteration = info.iteration
-
-            self.progress.update(self.task, completed=iteration + 1, total=self.total)
-
+            pct = min((info.iteration + 1) / self.total * 100, 100)
+            self.progress.update(self.task, completed=pct)
             return False
 
     # pipeline for baseline Cat boosting classifier model
@@ -586,7 +576,7 @@ with progress:
         auto_class_weights="Balanced",
         random_seed=42,
         verbose=0,
-        early_stopping_rounds=100,
+        early_stopping_rounds=200,
         allow_writing_files=False,
     )
 
@@ -604,77 +594,128 @@ with progress:
     ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝       ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝╚═╝╚═╝  ╚═══╝ ╚═════╝
     """
 
+    # Pause the parent bar's live display so a nested Progress can take over the
+    # console without Rich raising "Only one live display may be active at once"
+    progress.stop()
+
     # ──────────────────────────────────────────────────────────────────────────────
-    # Elastic Net
+    # Elastic Net — own Progress, freezes + prints on exit from this `with` block
     # ──────────────────────────────────────────────────────────────────────────────
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as elastic_progress:
 
-    # Elastic Net becomes visible
-    progress.update(
-        elastic_task, visible=True, description="[#BDFF08]Elastic Net • Fitting...[/]"
-    )
+        elastic_task = elastic_progress.add_task(
+            "[#BDFF08]Elastic Net • Fitting...[/]", total=100
+        )
 
-    pipeline_elastic_net.fit(X_train, y_train)
+        pipeline_elastic_net.fit(X_train, y_train)
 
-    # Elastic Net finished
-    progress.update(
-        elastic_task, completed=100, description="[#BDFF08]Elastic Net • Complete[/]"
-    )
+        elastic_progress.update(
+            elastic_task, completed=100, description="[#BDFF08]Elastic Net • Complete[/]"
+        )
+    # ^ block exit prints this bar's final frame as static terminal text and closes its Live
 
     # ──────────────────────────────────────────────────────────────────────────────
     # XGBoost
     # ──────────────────────────────────────────────────────────────────────────────
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as xgb_progress:
 
-    progress.update(
-        xgb_task, visible=True, description="[#BDFF08]XGBoost • Fitting...[/]"
-    )
+        xgb_task = xgb_progress.add_task(
+            "[#BDFF08]XGBoost • Fitting...[/]", total=100
+        )
 
-    xgbc_base.fit(X_train_xgb, y_train,
-                  eval_set=[(X_eval_xgb, y_eval)],
-                  verbose=False)
+        xgbc_base.callbacks = [XGBRichProgress(xgb_progress, xgb_task, 1000)]
+        xgbc_base.fit(
+            X_train_xgb, y_train,
+            eval_set=[(X_eval_xgb, y_eval)],
+            verbose=False,
+        )
 
-    progress.update(
-        xgb_task, completed=100, description="[#BDFF08]XGBoost • Complete[/]"
-    )
+        xgb_progress.update(
+            xgb_task, completed=100, description="[#BDFF08]XGBoost • Complete[/]"
+        )
 
     # ──────────────────────────────────────────────────────────────────────────────
     # LightGBM
     # ──────────────────────────────────────────────────────────────────────────────
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as lgbm_progress:
 
-    progress.update(
-        lgbm_task, visible=True, description="[#BDFF08]LightGBM • Fitting...[/]"
-    )
+        lgbm_task = lgbm_progress.add_task(
+            "[#BDFF08]LightGBM • Fitting...[/]", total=100
+        )
 
-    lgbmc_base.fit(
-        X_train_lgbm,
-        y_train,
-        categorical_feature=category_cols_X_train.tolist(),
-        eval_set=[(X_eval_lgbm, y_eval)],
-        callbacks=[lgbm_rich_progress, early_stopping(100)],
-    )
+        def lgbm_rich_progress_local(env):
+            if env.evaluation_result_list:
+                pct = min((env.iteration + 1) / env.end_iteration * 100, 100)
+                lgbm_progress.update(lgbm_task, completed=pct)
 
-    progress.update(
-        lgbm_task, completed=100, description="[#BDFF08]LightGBM • Complete[/]"
-    )
+        lgbmc_base.fit(
+            X_train_lgbm,
+            y_train,
+            categorical_feature=category_cols_X_train.tolist(),
+            eval_set=[(X_eval_lgbm, y_eval)],
+            callbacks=[lgbm_rich_progress_local, early_stopping(100)],
+        )
+
+        lgbm_progress.update(
+            lgbm_task, completed=100, description="[#BDFF08]LightGBM • Complete[/]"
+        )
 
     # ──────────────────────────────────────────────────────────────────────────────
     # CatBoost
     # ──────────────────────────────────────────────────────────────────────────────
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as catboost_progress:
 
-    progress.update(
-        catboost_task, visible=True, description="[#BDFF08]CatBoost • Fitting...[/]"
-    )
+        catboost_task = catboost_progress.add_task(
+            "[#BDFF08]CatBoost • Fitting...[/]", total=100
+        )
 
-    catbc_base.fit(
-        X_train_catbc,
-        y_train,
-        cat_features=category_cols_X_train.tolist(),
-        eval_set=(X_eval_catbc, y_eval),
-        callbacks=[CatBoostRichProgress(progress, catboost_task, 1000)],
-    )
+        catbc_base.fit(
+            X_train_catbc,
+            y_train,
+            cat_features=category_cols_X_train.tolist(),
+            eval_set=(X_eval_catbc, y_eval),
+            callbacks=[CatBoostRichProgress(catboost_progress, catboost_task, 1000)],
+        )
 
-    progress.update(
-        catboost_task, completed=100, description="[#BDFF08]CatBoost • Complete[/]"
-    )
+        catboost_progress.update(
+            catboost_task, completed=100, description="[#BDFF08]CatBoost • Complete[/]"
+        )
+
+    # All four model bars are now frozen static text above. Resume the parent bar's
+    # live display for the rest of the pipeline (eval, Optuna, final fit, joblib dump).
+    progress.start()
 
     """
     ███╗   ███╗ ██████╗ ██████╗ ███████╗██╗         ███████╗██╗   ██╗ █████╗ ██╗     ██╗   ██╗ █████╗ ████████╗██╗ ██████╗ ███╗   ██╗
@@ -689,19 +730,15 @@ with progress:
         parent_task, description="[yellow]MODEL EVALUATION[/]", completed=80
     )
 
-    # prediction and prediction probability for elastic net
     y_pred_en = pipeline_elastic_net.predict(X_eval)
     y_prob_en = pipeline_elastic_net.predict_proba(X_eval)[:, 1]
 
-    # prediction and prediction probability for XG boosting classifier
     y_pred_xgbc = xgbc_base.predict(X_eval_xgb)
     y_prob_xgbc = xgbc_base.predict_proba(X_eval_xgb)[:, 1]
 
-    # prediction and prediction probability for lgb classifier
     y_pred_lgbmc = lgbmc_base.predict(X_eval_lgbm)
     y_prob_lgbmc = lgbmc_base.predict_proba(X_eval_lgbm)[:, 1]
 
-    # prediction and prediction probability for cat boosting classifier
     y_pred_catbc = catbc_base.predict(X_eval_catbc)
     y_prob_catbc = catbc_base.predict_proba(X_eval_catbc)[:, 1]
 
@@ -709,7 +746,6 @@ with progress:
         parent_task, description="[yellow]METRIC CALCULATION[/]", completed=90
     )
 
-    # base model evaluation with accuracy, precision, recall, f1, and roc-auc
     base_result = pd.DataFrame(
         {
             "Models": [
@@ -759,6 +795,10 @@ with progress:
         "________________________________________________________________________________________________________________________\n"
     )
 
+    # Not completed=100 — Optuna tuning, final model fit, predictions, and joblib
+    # dump still run under this same parent_task
     progress.update(
-        parent_task, description="[green]MODEL EVALUATION COMPLETE[/]", completed=100
+        parent_task, description="[green]BASELINE EVALUATION COMPLETE[/]", completed=90
     )
+
+    # ─── Optuna tuning picks up parent_task from completed=90 onward ───
