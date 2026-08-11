@@ -548,6 +548,7 @@ with progress:
     pipeline_elastic_net.fit(X_train, y_train)
 
     finish_sub_task(progress, elastic_task, "Elastic Net")
+    progress.update(parent_task, completed=57)
 
     # ──────────────────────────────────────────────────────────────────────────────
     # XGBoost
@@ -562,6 +563,7 @@ with progress:
     )
 
     finish_sub_task(progress, xgb_task, "XGBoost")
+    progress.update(parent_task, completed=64)
 
     # ──────────────────────────────────────────────────────────────────────────────
     # LightGBM
@@ -586,6 +588,7 @@ with progress:
     )
 
     finish_sub_task(progress, lgbm_task, "LightGBM")
+    progress.update(parent_task, completed=71)
 
     # ──────────────────────────────────────────────────────────────────────────────
     # CatBoost
@@ -601,6 +604,7 @@ with progress:
     )
 
     finish_sub_task(progress, catboost_task, "CatBoost")
+    progress.update(parent_task, completed=74)
 
     """
     ███╗   ███╗ ██████╗ ██████╗ ███████╗██╗         ███████╗██╗   ██╗ █████╗ ██╗     ██╗   ██╗ █████╗ ████████╗██╗ ██████╗ ███╗   ██╗
@@ -612,7 +616,7 @@ with progress:
     """
 
     progress.update(
-        parent_task, description="[yellow]MODEL EVALUATION[/]", completed=80
+        parent_task, description="[yellow]MODEL EVALUATION[/]", completed=75
     )
 
     y_pred_en = pipeline_elastic_net.predict(X_eval)
@@ -628,7 +632,7 @@ with progress:
     y_prob_catbc = catbc_base.predict_proba(X_eval_catbc)[:, 1]
 
     progress.update(
-        parent_task, description="[yellow]METRIC CALCULATION[/]", completed=90
+        parent_task, description="[yellow]METRIC CALCULATION[/]", completed=78
     )
 
     base_result = pd.DataFrame(
@@ -683,7 +687,7 @@ with progress:
     # Not completed=100 — Optuna tuning, final model fit, predictions, and joblib
     # dump still run under this same parent_task
     progress.update(
-        parent_task, description="[green]BASELINE EVALUATION COMPLETE[/]", completed=90
+        parent_task, description="[green]BASELINE EVALUATION COMPLETE[/]", completed=80
     )
 
     # ─── Optuna tuning picks up parent_task from completed=90 onward ───
