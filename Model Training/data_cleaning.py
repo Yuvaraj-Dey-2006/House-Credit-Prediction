@@ -705,7 +705,7 @@ with progress:
     )
 
     console.print(
-        "\n[bold #C7009D]➤ TOP 2 BASELINE MODELS SELECTED FOR HYPERPARAMETER TUNING[/]"
+        "\n[bold #C7009D]➤ TOP 2 BASELINE MODELS SELECTED FOR HYPERPARAMETER TUNING[/]\n"
     )
 
     for i, row in top_2_baseline.iterrows():
