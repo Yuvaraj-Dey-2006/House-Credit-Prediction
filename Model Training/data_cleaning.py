@@ -470,7 +470,7 @@ with progress:
         scale_pos_weight=neg_count / max(pos_count, 1),
         n_estimators=1000,
         tree_method="hist",
-        early_stopping_rounds=200,
+        early_stopping_rounds=250,
         n_jobs=-1,
     )
     # callback is attached right before .fit(), once the real task exists — see below
@@ -517,7 +517,7 @@ with progress:
         auto_class_weights="Balanced",
         random_seed=42,
         verbose=0,
-        early_stopping_rounds=200,
+        early_stopping_rounds=250,
         allow_writing_files=False,
     )
 
@@ -580,11 +580,7 @@ with progress:
         y_train,
         categorical_feature=category_cols_X_train.tolist(),
         eval_set=[(X_eval_lgbm, y_eval)],
-        # verbose=False silences LightGBM's own internal print of
-        # "Training until validation scores don't improve..." / "Early stopping,
-        # best iteration is: ...". Those calls write straight to stdout, bypassing
-        # Rich's Live entirely — mid-render they corrupt/interleave with the bars.
-        callbacks=[lgbm_rich_progress, early_stopping(100, verbose=False)],
+        callbacks=[lgbm_rich_progress, early_stopping(250, verbose=False)],
     )
 
     finish_sub_task(progress, lgbm_task, "LightGBM")
@@ -684,8 +680,6 @@ with progress:
         "________________________________________________________________________________________________________________________\n"
     )
 
-    # Not completed=100 — Optuna tuning, final model fit, predictions, and joblib
-    # dump still run under this same parent_task
     progress.update(
         parent_task, description="[green]BASELINE EVALUATION COMPLETE[/]", completed=80
     )
