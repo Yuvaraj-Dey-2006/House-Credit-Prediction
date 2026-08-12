@@ -517,7 +517,7 @@ with progress:
         def after_iteration(self, info):
             pct = min((info.iteration + 1) / self.total * 100, 100)
             self.progress.update(self.task, completed=pct)
-            return True   
+            return True
 
     catbc_base = CatBoostClassifier(
         iterations=1000,
@@ -697,23 +697,28 @@ with progress:
         "________________________________________________________________________________________________________________________\n"
     )
 
-    best_model_name = base_result.loc[base_result["ROC-AUC"].idxmax(), "Models"]
+    # Select the top 2 baseline models automatically using ROC-AUC
+    top_2_baseline = (
+        base_result.sort_values("ROC-AUC", ascending=False)
+        .head(2)
+        .reset_index(drop=True)
+    )
 
     console.print(
-        f"\n[bold #C7009D]➤  BEST BASELINE MODEL (by ROC-AUC): {best_model_name}[/]\n"
+        "\n[bold #C7009D]➤ TOP 2 BASELINE MODELS SELECTED FOR HYPERPARAMETER TUNING[/]"
     )
 
-    model_lookup = {
-        "Elastic Net log reg": pipeline_elastic_net,
-        "XG Boost Classifier": xgbc_base,
-        "LightGBM Classifier": lgbmc_base,
-        "CatBoost Classifier": catbc_base,
-    }
-    best_model = model_lookup[best_model_name]
+    for i, row in top_2_baseline.iterrows():
+        if i < 1:
+            console.print(
+                f"  🥇1st. {row['Models']} " f"— Baseline ROC-AUC: {row['ROC-AUC']:.5f}"
+            )
+        else:
+            console.print(
+                f"  🥈2nd. {row['Models']} " f"— Baseline ROC-AUC: {row['ROC-AUC']:.5f}"
+            )
 
-    progress.update(
-        parent_task, description="[green]BASELINE EVALUATION COMPLETE[/]", completed=80
-    )
+    console.print()
 
 """
 ██╗  ██╗██╗   ██╗██████╗ ███████╗██████╗ ██████╗  █████╗ ██████╗  █████╗ ███╗   ███╗███████╗████████╗███████╗██████╗ 
@@ -729,13 +734,16 @@ with progress:
    ██║   ██║   ██║██║╚██╗██║██║██║╚██╗██║██║   ██║
    ██║   ╚██████╔╝██║ ╚████║██║██║ ╚████║╚██████╔╝
    ╚═╝    ╚═════╝ ╚═╝  ╚═══╝╚═╝╚═╝  ╚═══╝ ╚═════╝ 
+"""
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Optuna objective functions
+# ──────────────────────────────────────────────────────────────────────────────
 
 
 def objective_elasticnet(trial):
 
     C = trial.suggest_float("C", 1e-4, 10.0, log=True)
-
     l1_ratio = trial.suggest_float("l1_ratio", 0.0, 1.0)
 
     pipeline_en = Pipeline(
@@ -758,70 +766,29 @@ def objective_elasticnet(trial):
         ]
     )
 
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    scores = cross_val_score(
-        pipeline_en, X_train, y_train, cv=cv, scoring="roc_auc", n_jobs=-1
+    cv = StratifiedKFold(
+        n_splits=5,
+        shuffle=True,
+        random_state=42,
     )
 
-    # store the fold spread on the trial itself so we can inspect stability later
+    scores = cross_val_score(
+        pipeline_en,
+        X_train,
+        y_train,
+        cv=cv,
+        scoring="roc_auc",
+        n_jobs=-1,
+    )
+
     trial.set_user_attr("cv_std", scores.std())
     trial.set_user_attr("cv_scores", scores.tolist())
 
     return scores.mean()
 
 
-study_elasticnet = optuna.create_study(direction="maximize")
-study_elasticnet.optimize(objective_elasticnet, n_trials=50, show_progress_bar=False)
-
-best_trial = study_elasticnet.best_trial
-
-console.print(
-    f"\n[bold #C7009D]➤ Elastic Net — best CV ROC-AUC: "
-    f"{best_trial.value:.5f} ± {best_trial.user_attrs['cv_std']:.5f}[/]"
-)
-console.print(f"  Best params: {best_trial.params}\n")
-
-# ── Range of good values, not just the single best point ──
-# Looking only at the #1 trial can be misleading if the surface is flat/noisy.
-# This pulls the top 10% of trials and shows the range C/l1_ratio took in that
-# band, so you can see whether the optimum is a narrow spike or a broad region.
-trials_df = study_elasticnet.trials_dataframe()
-trials_df = trials_df[trials_df["state"] == "COMPLETE"].sort_values(
-    "value", ascending=False
-)
-
-top_n = max(1, int(len(trials_df) * 0.1))  # top 10% of trials
-top_trials = trials_df.head(top_n)
-
-console.print(
-    f"[bold #C7009D]➤ Elastic Net — top {top_n} trials (of {len(trials_df)}) parameter ranges:[/]"
-)
-console.print(
-    f"  C:        {top_trials['params_C'].min():.5g} – {top_trials['params_C'].max():.5g}"
-)
-console.print(
-    f"  l1_ratio: {top_trials['params_l1_ratio'].min():.3f} – {top_trials['params_l1_ratio'].max():.3f}"
-)
-console.print(
-    f"  ROC-AUC:  {top_trials['value'].min():.5f} – {top_trials['value'].max():.5f}\n"
-)
-
-# ──────────────────────────────────────────────────────────────────────────────
-# XGBoost — Optuna objective
-#
-# Unlike Elastic Net, XGBoost's baseline used early_stopping_rounds, which
-# sklearn's cross_val_score can't handle cleanly (it needs an eval_set per
-# fold). So this loops the folds manually, refitting pp_xg per fold to avoid
-# leakage, and early-stops against that fold's own held-out slice.
-#
-# 3 folds instead of 5 — with 50 trials × early-stopped boosting, 5-fold CV
-# here would be considerably slower for a similar signal; 3 folds is a
-# reasonable speed/reliability trade-off during search. You can raise this
-# once you've narrowed the search space if you want tighter estimates.
-# ──────────────────────────────────────────────────────────────────────────────
-
-
 def objective_xgboost(trial):
+
     params = {
         "max_depth": trial.suggest_int("max_depth", 3, 10),
         "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
@@ -832,19 +799,60 @@ def objective_xgboost(trial):
         "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
         "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),
     }
-    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+
+    cv = StratifiedKFold(
+        n_splits=5,
+        shuffle=True,
+        random_state=42,
+    )
+
     fold_scores = []
+
     for train_idx, val_idx in cv.split(X_train, y_train):
+
         X_fold_train = X_train.iloc[train_idx]
         X_fold_val = X_train.iloc[val_idx]
+
         y_fold_train = y_train.iloc[train_idx]
         y_fold_val = y_train.iloc[val_idx]
-        # refit preprocessing per fold — avoids leaking val-fold stats into
-        # imputation, unlike the single fit_transform used for the baseline
-        X_fold_train_xgb = pp_xg.fit_transform(X_fold_train)
-        X_fold_val_xgb = pp_xg.transform(X_fold_val)
+
+        # Fit preprocessing only on the fold's training data
+        fold_pp_xg = ColumnTransformer(
+            transformers=[
+                (
+                    "num_scale",
+                    Pipeline([("imputer", SimpleImputer(strategy="median"))]),
+                    num_cols_X_train,
+                ),
+                (
+                    "category_scale",
+                    Pipeline(
+                        [
+                            (
+                                "imputer",
+                                SimpleImputer(strategy="most_frequent"),
+                            ),
+                            (
+                                "encoder",
+                                OneHotEncoder(
+                                    handle_unknown="ignore",
+                                    sparse_output=True,
+                                ),
+                            ),
+                        ]
+                    ),
+                    category_cols_X_train,
+                ),
+            ],
+            verbose_feature_names_out=False,
+        )
+
+        X_fold_train_xgb = fold_pp_xg.fit_transform(X_fold_train)
+        X_fold_val_xgb = fold_pp_xg.transform(X_fold_val)
+
         fold_neg = (y_fold_train == 0).sum()
         fold_pos = (y_fold_train == 1).sum()
+
         model = XGBClassifier(
             **params,
             n_estimators=1000,
@@ -855,67 +863,31 @@ def objective_xgboost(trial):
             early_stopping_rounds=50,
             n_jobs=-1,
         )
+
         model.fit(
             X_fold_train_xgb,
             y_fold_train,
             eval_set=[(X_fold_val_xgb, y_fold_val)],
             verbose=False,
         )
+
         fold_prob = model.predict_proba(X_fold_val_xgb)[:, 1]
+
         fold_scores.append(roc_auc_score(y_fold_val, fold_prob))
+
     fold_scores = np.array(fold_scores)
+
     trial.set_user_attr("cv_std", fold_scores.std())
-    trial.set_user_attr("cv_scores", fold_scores.tolist())
+    trial.set_user_attr(
+        "cv_scores",
+        fold_scores.tolist(),
+    )
+
     return fold_scores.mean()
 
 
-study_xgboost = optuna.create_study(direction="maximize")
-study_xgboost.optimize(objective_xgboost, n_trials=50, show_progress_bar=False)
-best_trial = study_xgboost.best_trial
-console.print(
-    f"\n[bold #C7009D]➤ XGBoost — best CV ROC-AUC: "
-    f"{best_trial.value:.5f} ± {best_trial.user_attrs['cv_std']:.5f}[/]"
-)
-console.print(f"  Best params: {best_trial.params}\n")
-# ── Range of good values across the top 10% of trials ──
-trials_df = study_xgboost.trials_dataframe()
-trials_df = trials_df[trials_df["state"] == "COMPLETE"].sort_values(
-    "value", ascending=False
-)
-top_n = max(1, int(len(trials_df) * 0.1))
-top_trials = trials_df.head(top_n)
-console.print(
-    f"[bold #C7009D]➤ XGBoost — top {top_n} trials (of {len(trials_df)}) parameter ranges:[/]"
-)
-for param in [
-    "max_depth",
-    "learning_rate",
-    "subsample",
-    "colsample_bytree",
-    "min_child_weight",
-    "gamma",
-    "reg_alpha",
-    "reg_lambda",
-]:
-    col = f"params_{param}"
-    console.print(
-        f"  {param:<17} {top_trials[col].min():.5g} – {top_trials[col].max():.5g}"
-    )
-console.print(
-    f"  {'ROC-AUC':<17} {top_trials['value'].min():.5f} – {top_trials['value'].max():.5f}\n"
-)
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# LightGBM — Optuna objective
-#
-# Same manual-fold approach as XGBoost (early stopping needs its own eval_set
-# per fold). Also needs pp_lgbm refit per fold + category dtype re-applied,
-# matching how X_train_lgbm/X_eval_lgbm were built for the baseline.
-# ──────────────────────────────────────────────────────────────────────────────
-
-
 def objective_lightgbm(trial):
+
     params = {
         "num_leaves": trial.suggest_int("num_leaves", 15, 127),
         "max_depth": trial.suggest_int("max_depth", 3, 12),
@@ -926,26 +898,59 @@ def objective_lightgbm(trial):
         "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
         "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),
     }
-    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+
+    cv = StratifiedKFold(
+        n_splits=5,
+        shuffle=True,
+        random_state=42,
+    )
+
     fold_scores = []
+
     for train_idx, val_idx in cv.split(X_train, y_train):
+
         X_fold_train = X_train.iloc[train_idx]
         X_fold_val = X_train.iloc[val_idx]
+
         y_fold_train = y_train.iloc[train_idx]
         y_fold_val = y_train.iloc[val_idx]
-        # refit pp_lgbm per fold — same leakage concern as XGBoost's objective
-        X_fold_train_lgbm = pp_lgbm.fit_transform(X_fold_train)
-        X_fold_val_lgbm = pp_lgbm.transform(X_fold_val)
-        # re-apply category dtype using this fold's own categories,
-        # matching how X_train_lgbm/X_eval_lgbm were set up originally
+
+        # Create a fresh preprocessing pipeline for each fold
+        fold_pp_lgbm = ColumnTransformer(
+            transformers=[
+                (
+                    "num",
+                    SimpleImputer(strategy="median"),
+                    num_cols_X_train,
+                ),
+                (
+                    "cat",
+                    SimpleImputer(strategy="most_frequent"),
+                    category_cols_X_train,
+                ),
+            ],
+            remainder="drop",
+            verbose_feature_names_out=False,
+        )
+
+        fold_pp_lgbm.set_output(transform="pandas")
+
+        X_fold_train_lgbm = fold_pp_lgbm.fit_transform(X_fold_train)
+
+        X_fold_val_lgbm = fold_pp_lgbm.transform(X_fold_val)
+
         for col in category_cols_X_train:
+
             X_fold_train_lgbm[col] = X_fold_train_lgbm[col].astype("category")
+
             X_fold_val_lgbm[col] = pd.Categorical(
                 X_fold_val_lgbm[col],
                 categories=X_fold_train_lgbm[col].cat.categories,
             )
+
         fold_neg = (y_fold_train == 0).sum()
         fold_pos = (y_fold_train == 1).sum()
+
         model = LGBMClassifier(
             **params,
             n_estimators=1000,
@@ -955,90 +960,115 @@ def objective_lightgbm(trial):
             verbosity=-1,
             n_jobs=-1,
         )
+
         model.fit(
             X_fold_train_lgbm,
             y_fold_train,
             categorical_feature=category_cols_X_train.tolist(),
             eval_set=[(X_fold_val_lgbm, y_fold_val)],
-            callbacks=[early_stopping(50, verbose=False)],
+            callbacks=[
+                early_stopping(
+                    50,
+                    verbose=False,
+                )
+            ],
         )
+
         fold_prob = model.predict_proba(X_fold_val_lgbm)[:, 1]
-        fold_scores.append(roc_auc_score(y_fold_val, fold_prob))
+
+        fold_scores.append(
+            roc_auc_score(
+                y_fold_val,
+                fold_prob,
+            )
+        )
+
     fold_scores = np.array(fold_scores)
-    trial.set_user_attr("cv_std", fold_scores.std())
-    trial.set_user_attr("cv_scores", fold_scores.tolist())
+
+    trial.set_user_attr(
+        "cv_std",
+        fold_scores.std(),
+    )
+
+    trial.set_user_attr(
+        "cv_scores",
+        fold_scores.tolist(),
+    )
+
     return fold_scores.mean()
 
 
-study_lightgbm = optuna.create_study(direction="maximize")
-study_lightgbm.optimize(objective_lightgbm, n_trials=50, show_progress_bar=False)
-best_trial = study_lightgbm.best_trial
-console.print(
-    f"\n[bold #C7009D]➤ LightGBM — best CV ROC-AUC: "
-    f"{best_trial.value:.5f} ± {best_trial.user_attrs['cv_std']:.5f}[/]"
-)
-console.print(f"  Best params: {best_trial.params}\n")
-# ── Range of good values across the top 10% of trials ──
-trials_df = study_lightgbm.trials_dataframe()
-trials_df = trials_df[trials_df["state"] == "COMPLETE"].sort_values(
-    "value", ascending=False
-)
-top_n = max(1, int(len(trials_df) * 0.1))
-top_trials = trials_df.head(top_n)
-console.print(
-    f"[bold #C7009D]➤ LightGBM — top {top_n} trials (of {len(trials_df)}) parameter ranges:[/]"
-)
-for param in [
-    "num_leaves",
-    "max_depth",
-    "min_child_samples",
-    "learning_rate",
-    "subsample",
-    "colsample_bytree",
-    "reg_alpha",
-    "reg_lambda",
-]:
-    col = f"params_{param}"
-    console.print(
-        f"  {param:<17} {top_trials[col].min():.5g} – {top_trials[col].max():.5g}"
-    )
-console.print(
-    f"  {'ROC-AUC':<17} {top_trials['value'].min():.5f} – {top_trials['value'].max():.5f}\n"
-)
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# CatBoost — Optuna objective
-#
-# Same manual-fold pattern. CatBoost's early stopping is a constructor arg
-# (early_stopping_rounds) rather than a fit-time callback, and categorical
-# columns just need to be cast to str per fold — no dtype/category-list
-# bookkeeping like LightGBM needed.
-# ──────────────────────────────────────────────────────────────────────────────
-
-
 def objective_catboost(trial):
+
     params = {
         "depth": trial.suggest_int("depth", 4, 10),
         "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
         "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1.0, 10.0, log=True),
-        "bagging_temperature": trial.suggest_float("bagging_temperature", 0.0, 1.0),
+        "bagging_temperature": trial.suggest_float("bagging_temperature", 0.0, 5.0),
         "random_strength": trial.suggest_float("random_strength", 1e-3, 10.0, log=True),
         "border_count": trial.suggest_int("border_count", 32, 255),
+        "rsm": trial.suggest_float("rsm", 0.5, 1.0),
     }
-    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+
+    cv = StratifiedKFold(
+        n_splits=5,
+        shuffle=True,
+        random_state=42,
+    )
+
     fold_scores = []
+
     for train_idx, val_idx in cv.split(X_train, y_train):
+
         X_fold_train = X_train.iloc[train_idx]
         X_fold_val = X_train.iloc[val_idx]
+
         y_fold_train = y_train.iloc[train_idx]
         y_fold_val = y_train.iloc[val_idx]
-        # refit pp_catbc per fold — same leakage concern as the other objectives
-        X_fold_train_catbc = pp_catbc.fit_transform(X_fold_train)
-        X_fold_val_catbc = pp_catbc.transform(X_fold_val)
+
+        fold_pp_catbc = ColumnTransformer(
+            transformers=[
+                (
+                    "num_scale",
+                    Pipeline(
+                        [
+                            (
+                                "imputer",
+                                SimpleImputer(strategy="median"),
+                            )
+                        ]
+                    ),
+                    num_cols_X_train,
+                ),
+                (
+                    "category_scale",
+                    Pipeline(
+                        [
+                            (
+                                "imputer",
+                                SimpleImputer(strategy="most_frequent"),
+                            )
+                        ]
+                    ),
+                    category_cols_X_train,
+                ),
+            ],
+            remainder="drop",
+            verbose_feature_names_out=False,
+        )
+
+        fold_pp_catbc.set_output(transform="pandas")
+
+        X_fold_train_catbc = fold_pp_catbc.fit_transform(X_fold_train)
+
+        X_fold_val_catbc = fold_pp_catbc.transform(X_fold_val)
+
         for col in category_cols_X_train:
+
             X_fold_train_catbc[col] = X_fold_train_catbc[col].astype(str)
+
             X_fold_val_catbc[col] = X_fold_val_catbc[col].astype(str)
+
         model = CatBoostClassifier(
             **params,
             iterations=1000,
@@ -1050,51 +1080,157 @@ def objective_catboost(trial):
             early_stopping_rounds=50,
             allow_writing_files=False,
         )
+
         model.fit(
             X_fold_train_catbc,
             y_fold_train,
             cat_features=category_cols_X_train.tolist(),
-            eval_set=(X_fold_val_catbc, y_fold_val),
+            eval_set=(
+                X_fold_val_catbc,
+                y_fold_val,
+            ),
         )
+
         fold_prob = model.predict_proba(X_fold_val_catbc)[:, 1]
-        fold_scores.append(roc_auc_score(y_fold_val, fold_prob))
+
+        fold_scores.append(
+            roc_auc_score(
+                y_fold_val,
+                fold_prob,
+            )
+        )
+
     fold_scores = np.array(fold_scores)
-    trial.set_user_attr("cv_std", fold_scores.std())
-    trial.set_user_attr("cv_scores", fold_scores.tolist())
+
+    trial.set_user_attr(
+        "cv_std",
+        fold_scores.std(),
+    )
+
+    trial.set_user_attr(
+        "cv_scores",
+        fold_scores.tolist(),
+    )
+
     return fold_scores.mean()
 
 
-study_catboost = optuna.create_study(direction="maximize")
-study_catboost.optimize(objective_catboost, n_trials=50, show_progress_bar=False)
-best_trial = study_catboost.best_trial
-console.print(
-    f"\n[bold #C7009D]➤ CatBoost — best CV ROC-AUC: "
-    f"{best_trial.value:.5f} ± {best_trial.user_attrs['cv_std']:.5f}[/]"
-)
-console.print(f"  Best params: {best_trial.params}\n")
-# ── Range of good values across the top 10% of trials ──
-trials_df = study_catboost.trials_dataframe()
-trials_df = trials_df[trials_df["state"] == "COMPLETE"].sort_values(
-    "value", ascending=False
-)
-top_n = max(1, int(len(trials_df) * 0.1))
-top_trials = trials_df.head(top_n)
-console.print(
-    f"[bold #C7009D]➤ CatBoost — top {top_n} trials (of {len(trials_df)}) parameter ranges:[/]"
-)
-for param in [
-    "depth",
-    "learning_rate",
-    "l2_leaf_reg",
-    "bagging_temperature",
-    "random_strength",
-    "border_count",
-]:
-    col = f"params_{param}"
-    console.print(
-        f"  {param:<19} {top_trials[col].min():.5g} – {top_trials[col].max():.5g}"
+# ──────────────────────────────────────────────────────────────────────────────
+# Objective lookup
+# ──────────────────────────────────────────────────────────────────────────────
+
+objective_lookup = {
+    "Elastic Net log reg.": objective_elasticnet,
+    "XG Boost Classifier": objective_xgboost,
+    "LightGBM Classifier": objective_lightgbm,
+    "CatBoost Classifier": objective_catboost,
+}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Tune ONLY the automatically selected top 2 models
+# ──────────────────────────────────────────────────────────────────────────────
+
+tuned_results = []
+
+for _, row in top_2_baseline.iterrows():
+
+    model_name = row["Models"]
+    objective = objective_lookup[model_name]
+
+    progress.update(
+        parent_task,
+        description=f"[magenta]TUNING {model_name.upper()}[/]",
+        completed=85,
     )
-console.print(
-    f"  {'ROC-AUC':<19} {top_trials['value'].min():.5f} – {top_trials['value'].max():.5f}\n"
+
+    console.print(f"\n[bold #C7009D]➤ Starting Optuna tuning: " f"{model_name}[/]")
+
+    study = optuna.create_study(direction="maximize")
+
+    study.optimize(
+        objective,
+        n_trials=100,
+        show_progress_bar=False,
+    )
+
+    best_trial = study.best_trial
+
+    tuned_results.append(
+        {
+            "Model": model_name,
+            "Baseline ROC-AUC": row["ROC-AUC"],
+            "Tuned CV ROC-AUC": best_trial.value,
+            "CV Std": best_trial.user_attrs["cv_std"],
+            "Best Params": best_trial.params,
+            "Study": study,
+        }
+    )
+
+    console.print(f"[bold green]✓ {model_name} tuning complete[/]")
+
+    console.print(f"  Baseline ROC-AUC : " f"{row['ROC-AUC']:.5f}")
+
+    console.print(
+        f"  Tuned CV ROC-AUC : "
+        f"{best_trial.value:.5f} "
+        f"± {best_trial.user_attrs['cv_std']:.5f}"
+    )
+
+    console.print(f"  Best params      : " f"{best_trial.params}\n")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Compare the two tuned models
+# ──────────────────────────────────────────────────────────────────────────────
+
+tuned_summary = (
+    pd.DataFrame(
+        [
+            {
+                "Model": result["Model"],
+                "Baseline ROC-AUC": result["Baseline ROC-AUC"],
+                "Tuned CV ROC-AUC": result["Tuned CV ROC-AUC"],
+                "CV Std": result["CV Std"],
+            }
+            for result in tuned_results
+        ]
+    )
+    .sort_values(
+        "Tuned CV ROC-AUC",
+        ascending=False,
+    )
+    .reset_index(drop=True)
 )
-"""
+
+console.print("\n[bold #C7009D]════════ TUNED MODEL COMPARISON ════════[/]")
+
+console.print(tuned_summary.round(5))
+
+# Automatically select the best tuned model
+best_model_name = tuned_summary.loc[
+    0,
+    "Model",
+]
+
+best_tuned_result = next(
+    result for result in tuned_results if result["Model"] == best_model_name
+)
+
+best_params = best_tuned_result["Best Params"]
+
+console.print(f"\n[bold green]🏆 BEST MODEL: " f"{best_model_name}[/]")
+
+console.print(
+    f"[bold green]Tuned CV ROC-AUC: "
+    f"{best_tuned_result['Tuned CV ROC-AUC']:.5f} "
+    f"± {best_tuned_result['CV Std']:.5f}[/]"
+)
+
+console.print(f"[bold green]Best parameters: " f"{best_params}[/]\n")
+
+progress.update(
+    parent_task,
+    description="[green]TOP 2 TUNING COMPLETE[/]",
+    completed=90,
+)
