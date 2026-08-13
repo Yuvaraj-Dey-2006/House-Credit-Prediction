@@ -57,6 +57,7 @@ from config import (
     BASELINE_RESULTS_PATH,
 )
 
+# Initialize console for rich formatting and progress display
 console = Console()
 
 progress = Progress(
@@ -70,12 +71,14 @@ progress = Progress(
 )
 
 
+# Helper function to mark a training subtask as complete and remove it from progress display
 def finish_sub_task(progress_obj, task_id, label):
     progress_obj.update(task_id, completed=100)
     console.print(f"[#BDFF08]{label} • Complete[/]  " + "━" * 40 + "  100%")
     progress_obj.remove_task(task_id)
 
 
+# Custom callback to update progress bar for XGBoost training iterations
 class XGBRichProgress(TrainingCallback):
     def __init__(self, progress, task, total):
         self.progress = progress
@@ -88,6 +91,7 @@ class XGBRichProgress(TrainingCallback):
         return False  # XGBoost: False = keep training
 
 
+# Custom callback to update progress bar for CatBoost training iterations
 class CatBoostRichProgress:
     def __init__(self, progress, task, total):
         self.progress = progress
@@ -115,6 +119,7 @@ with progress:
 
     progress.update(parent_task, description="[#00FFFF]LOADING CLEANED DATA[/]")
 
+    # Load preprocessed training data from cleaned CSV file
     train_df = pd.read_csv(CLEANED_TRAIN_PATH)
 
     progress.update(parent_task, completed=5)
@@ -130,9 +135,11 @@ with progress:
 
     progress.update(parent_task, description="[blue]DATA SPLITTING[/]")
 
+    # Separate features from target variable, removing ID column
     training_features = train_df.drop(columns=["TARGET", "SK_ID_CURR"])
     target_set = train_df["TARGET"]
 
+    # Split data into train (70%), validation (15%), and evaluation (15%) sets while maintaining class distribution
     X_train, X_temp, y_train, y_temp = train_test_split(
         training_features,
         target_set,
@@ -142,6 +149,7 @@ with progress:
         random_state=42,
     )
 
+    # Further split temporary set into validation and evaluation sets
     X_val, X_eval, y_val, y_eval = train_test_split(
         X_temp,
         y_temp,
@@ -171,12 +179,14 @@ with progress:
 
     progress.update(parent_task, description="[magenta]PREPROCESSING PIPELINES[/]")
 
+    # Identify numeric and categorical feature columns for selective preprocessing
     num_cols_X_train = X_train.select_dtypes(include=np.number).columns
     category_cols_X_train = X_train.select_dtypes(
         include=["object", "category", "str"]
     ).columns
 
-    # Elastic Net preprocessing
+    # Create preprocessing pipeline for Elastic Net: impute numeric features with median and scale using RobustScaler
+    # For categorical features: impute with most frequent value and apply one-hot encoding
     num_col_pipeline_en = Pipeline(
         [
             ("imputer", SimpleImputer(strategy="median")),
@@ -188,7 +198,9 @@ with progress:
             ("imputer", SimpleImputer(strategy="most_frequent")),
             (
                 "encoder",
-                OneHotEncoder(handle_unknown="ignore", drop="first", sparse_output=False),
+                OneHotEncoder(
+                    handle_unknown="ignore", drop="first", sparse_output=False
+                ),
             ),
         ]
     )
@@ -200,7 +212,7 @@ with progress:
         verbose_feature_names_out=False,
     )
 
-    # XGBoost preprocessing
+    # Create preprocessing pipeline for XGBoost: impute numeric features with median, categorical with one-hot encoding (sparse format)
     num_col_pipeline_xg = Pipeline([("imputer", SimpleImputer(strategy="median"))])
     category_col_pipeline_xg = Pipeline(
         [
@@ -216,7 +228,7 @@ with progress:
         verbose_feature_names_out=False,
     )
 
-    # LightGBM preprocessing (native categorical handling)
+    # Create preprocessing pipeline for LightGBM: impute features but keep categorical data as is (LightGBM handles categories natively)
     pp_lgbm = ColumnTransformer(
         transformers=[
             ("num", SimpleImputer(strategy="median"), num_cols_X_train),
@@ -227,10 +239,12 @@ with progress:
     )
     pp_lgbm.set_output(transform="pandas")
 
+    # Apply preprocessing to all data splits
     X_train_lgbm = pp_lgbm.fit_transform(X_train)
     X_val_lgbm = pp_lgbm.transform(X_val)
     X_eval_lgbm = pp_lgbm.transform(X_eval)
 
+    # Convert categorical columns to pandas Categorical type for LightGBM's categorical feature handling
     for col in category_cols_X_train:
         categories = X_train_lgbm[col].astype("category").cat.categories
 
@@ -249,10 +263,11 @@ with progress:
             categories=categories,
         )
 
+    # Count class occurrences to handle class imbalance in model training
     neg_count = (y_train == 0).sum()
     pos_count = (y_train == 1).sum()
 
-    # CatBoost preprocessing
+    # Create preprocessing pipeline for CatBoost: impute features without encoding (CatBoost handles categorical features natively)
     num_col_pipeline_catbc = Pipeline([("imputer", SimpleImputer(strategy="median"))])
     categorty_col_pipeline_catbc = Pipeline(
         [("imputer", SimpleImputer(strategy="most_frequent"))]
@@ -267,10 +282,12 @@ with progress:
     )
     pp_catbc.set_output(transform="pandas")
 
+    # Apply preprocessing to all data splits for CatBoost
     X_train_catbc = pp_catbc.fit_transform(X_train)
     X_val_catbc = pp_catbc.transform(X_val)
     X_eval_catbc = pp_catbc.transform(X_eval)
 
+    # Convert categorical columns to string type for CatBoost's categorical feature handling
     for col in category_cols_X_train:
         X_train_catbc[col] = X_train_catbc[col].astype(str)
         X_val_catbc[col] = X_val_catbc[col].astype(str)
@@ -290,16 +307,19 @@ with progress:
 
     progress.update(parent_task, description="[magenta]PREPARING BASELINE MODELS[/]")
 
+    # Apply Elastic Net preprocessing to all data splits
     X_train_en = pp_elasticnet.fit_transform(X_train)
     X_val_en = pp_elasticnet.transform(X_val)
     X_eval_en = pp_elasticnet.transform(X_eval)
 
+    # Calculate class weights to address class imbalance in the training data
     classes = np.array([0, 1])
     class_weights = compute_class_weight(
         class_weight="balanced", classes=classes, y=y_train
     )
     class_weight_dict = dict(zip(classes, class_weights))
 
+    # Initialize Elastic Net (SGD) classifier with log loss and elasticnet regularization
     sgd_base = SGDClassifier(
         loss="log_loss",
         penalty="elasticnet",
@@ -311,10 +331,12 @@ with progress:
         n_jobs=-1,
     )
 
+    # Apply XGBoost preprocessing to all data splits
     X_train_xgb = pp_xg.fit_transform(X_train)
     X_val_xgb = pp_xg.transform(X_val)
     X_eval_xgb = pp_xg.transform(X_eval)
 
+    # Initialize XGBoost classifier with early stopping and class weight balancing
     xgbc_base = XGBClassifier(
         random_state=42,
         eval_metric="auc",
@@ -325,6 +347,7 @@ with progress:
         n_jobs=-1,
     )
 
+    # Initialize LightGBM classifier with AUC metric and scale_pos_weight for class imbalance
     lgbmc_base = LGBMClassifier(
         n_estimators=1000,
         learning_rate=0.05,
@@ -339,6 +362,7 @@ with progress:
         n_jobs=-1,
     )
 
+    # Initialize CatBoost classifier with auto class weights and early stopping
     catbc_base = CatBoostClassifier(
         iterations=1000,
         learning_rate=0.05,
@@ -364,8 +388,10 @@ with progress:
     ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝       ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝╚═╝╚═╝  ╚═══╝ ╚═════╝
     """
 
-    # Elastic Net
-    sgd_task = progress.add_task("[#BDFF08]Elastic Net (SGD) • Fitting...[/]", total=100)
+    # Train Elastic Net using incremental learning with early stopping based on validation ROC-AUC
+    sgd_task = progress.add_task(
+        "[#BDFF08]Elastic Net (SGD) • Fitting...[/]", total=100
+    )
 
     max_epochs = 200
     patience = 10
@@ -373,19 +399,21 @@ with progress:
     epochs_no_improve = 0
 
     for epoch in range(max_epochs):
-
+        # Incrementally fit SGD on mini-batches
         sgd_base.partial_fit(
             X_train_en,
             y_train,
             classes=classes,
         )
 
+        # Evaluate on validation set and check for improvement
         val_prob = sgd_base.predict_proba(X_val_en)[:, 1]
         val_score = roc_auc_score(y_val, val_prob)
 
         pct = min((epoch + 1) / max_epochs * 100, 100)
         progress.update(sgd_task, completed=pct)
 
+        # Implement early stopping if validation score doesn't improve
         if val_score > best_score:
             best_score = val_score
             epochs_no_improve = 0
@@ -397,29 +425,28 @@ with progress:
 
     finish_sub_task(progress, sgd_task, "Elastic Net (SGD)")
 
-
-    # XGBoost
+    # Train XGBoost classifier with custom progress callback for real-time visualization
     xgb_task = progress.add_task("[#BDFF08]XGBoost • Fitting...[/]", total=100)
 
     xgbc_base.callbacks = [XGBRichProgress(progress, xgb_task, 1000)]
 
     xgbc_base.fit(
-        X_train_xgb, y_train,
+        X_train_xgb,
+        y_train,
         eval_set=[(X_val_xgb, y_val)],
         verbose=False,
     )
     finish_sub_task(progress, xgb_task, "XGBoost")
 
-    # Drop the reference to XGBRichProgress (and the Progress/RLock it holds)
-    # now that training is done — otherwise joblib.dump tries to pickle the
-    # live progress bar along with the model and fails on the thread lock.
+    # Clear callback reference to avoid serialization issues during model saving
     xgbc_base.callbacks = None
 
     progress.update(parent_task, completed=65)
 
-    # LightGBM
+    # Train LightGBM classifier with categorical features and early stopping
     lgbm_task = progress.add_task("[#BDFF08]LightGBM • Fitting...[/]", total=100)
 
+    # Define callback to update progress bar during LightGBM training
     def lgbm_rich_progress(env):
         if env.evaluation_result_list:
             pct = min((env.iteration + 1) / env.end_iteration * 100, 100)
@@ -440,7 +467,7 @@ with progress:
 
     progress.update(parent_task, completed=78)
 
-    # CatBoost
+    # Train CatBoost classifier with native categorical feature handling and custom progress tracking
     catboost_task = progress.add_task("[#BDFF08]CatBoost • Fitting...[/]", total=100)
 
     catbc_base.fit(
@@ -448,9 +475,7 @@ with progress:
         y_train,
         cat_features=category_cols_X_train.tolist(),
         eval_set=(X_val_catbc, y_val),
-        callbacks=[
-            CatBoostRichProgress(progress, catboost_task, 1000)
-        ],
+        callbacks=[CatBoostRichProgress(progress, catboost_task, 1000)],
     )
 
     finish_sub_task(progress, catboost_task, "CatBoost")
@@ -466,9 +491,12 @@ with progress:
     ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝    ╚══════╝  ╚═══╝  ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝
     """
 
-    progress.update(parent_task, description="[yellow]MODEL EVALUATION[/]", completed=88)
+    progress.update(
+        parent_task, description="[yellow]MODEL EVALUATION[/]", completed=88
+    )
 
-    y_pred_en = sgd_base.predict(X_eval_en)              
+    # Generate predictions and probabilities for all models on evaluation set
+    y_pred_en = sgd_base.predict(X_eval_en)
     y_prob_en = sgd_base.predict_proba(X_eval_en)[:, 1]
 
     y_pred_xgbc = xgbc_base.predict(X_eval_xgb)
@@ -480,8 +508,11 @@ with progress:
     y_pred_catbc = catbc_base.predict(X_eval_catbc)
     y_prob_catbc = catbc_base.predict_proba(X_eval_catbc)[:, 1]
 
-    progress.update(parent_task, description="[yellow]METRIC CALCULATION[/]", completed=92)
+    progress.update(
+        parent_task, description="[yellow]METRIC CALCULATION[/]", completed=92
+    )
 
+    # Calculate comprehensive metrics for each model: Accuracy, Precision, Recall, F1, and ROC-AUC
     base_result = pd.DataFrame(
         {
             "Models": [
@@ -531,8 +562,11 @@ with progress:
         "________________________________________________________________________________________________________________________\n"
     )
 
+    # Identify the best performing model based on ROC-AUC score
     best_model_name = base_result.loc[base_result["ROC-AUC"].idxmax(), "Models"]
-    console.print(f"\n[bold #C7009D]➤ BEST BASELINE MODEL (by ROC-AUC): {best_model_name}[/]\n")
+    console.print(
+        f"\n[bold #C7009D]➤ BEST BASELINE MODEL (by ROC-AUC): {best_model_name}[/]\n"
+    )
 
     """
     ███████╗ █████╗ ██╗   ██╗██╗███╗   ██╗ ██████╗
@@ -543,8 +577,11 @@ with progress:
     ╚══════╝╚═╝  ╚═╝  ╚═══╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝
     """
 
-    progress.update(parent_task, description="[#00FFFF]SAVING ARTIFACTS[/]", completed=96)
+    progress.update(
+        parent_task, description="[#00FFFF]SAVING ARTIFACTS[/]", completed=96
+    )
 
+    # Save train/validation/evaluation data splits for reproducibility
     joblib.dump(
         {
             "X_train": X_train,
@@ -557,6 +594,7 @@ with progress:
         SPLIT_DATA_PATH,
     )
 
+    # Save all preprocessing pipelines for consistent feature transformation during inference
     joblib.dump(
         {
             "pp_elasticnet": pp_elasticnet,
@@ -567,6 +605,7 @@ with progress:
         PREPROCESSORS_PATH,
     )
 
+    # Save all trained baseline models for comparison and further tuning
     joblib.dump(
         {
             "sgd_base": sgd_base,
@@ -576,7 +615,8 @@ with progress:
         },
         BASELINE_MODELS_PATH,
     )
-    
+
+    # Save model performance metrics for analysis
     joblib.dump(base_result, BASELINE_RESULTS_PATH)
 
     console.print(
