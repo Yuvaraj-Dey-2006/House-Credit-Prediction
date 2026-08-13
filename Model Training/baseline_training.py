@@ -23,8 +23,9 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import RobustScaler, OneHotEncoder
-from sklearn.linear_model import SGDClassifier
+from sklearn.utils.class_weight import compute_class_weight
 
+from sklearn.linear_model import SGDClassifier
 from xgboost import XGBClassifier
 from xgboost.callback import TrainingCallback
 from lightgbm import LGBMClassifier, early_stopping
@@ -265,12 +266,18 @@ with progress:
     X_train_en = pp_elasticnet.fit_transform(X_train)
     X_eval_en = pp_elasticnet.transform(X_eval)
 
+    classes = np.array([0, 1])
+    class_weights = compute_class_weight(
+        class_weight="balanced", classes=classes, y=y_train
+    )
+    class_weight_dict = dict(zip(classes, class_weights))
+
     sgd_base = SGDClassifier(
         loss="log_loss",
         penalty="elasticnet",
         l1_ratio=0.5,
         alpha=1e-4,
-        class_weight="balanced",
+        class_weight=class_weight_dict,
         random_state=42,
         learning_rate="optimal",
         n_jobs=-1,
@@ -356,6 +363,7 @@ with progress:
 
     finish_sub_task(progress, sgd_task, "Elastic Net (SGD)")
 
+
     # XGBoost
     xgb_task = progress.add_task("[#BDFF08]XGBoost • Fitting...[/]", total=100)
     xgbc_base.callbacks = [XGBRichProgress(progress, xgb_task, 1000)]
@@ -414,8 +422,8 @@ with progress:
 
     progress.update(parent_task, description="[yellow]MODEL EVALUATION[/]", completed=88)
 
-    y_pred_en = sgd_base.predict(X_eval)
-    y_prob_en = sgd_base.predict_proba(X_eval)[:, 1]
+    y_pred_en = sgd_base.predict(X_eval_en)              
+    y_prob_en = sgd_base.predict_proba(X_eval_en)[:, 1]
 
     y_pred_xgbc = xgbc_base.predict(X_eval_xgb)
     y_prob_xgbc = xgbc_base.predict_proba(X_eval_xgb)[:, 1]
