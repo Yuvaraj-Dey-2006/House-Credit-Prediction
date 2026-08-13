@@ -133,12 +133,21 @@ with progress:
     training_features = train_df.drop(columns=["TARGET", "SK_ID_CURR"])
     target_set = train_df["TARGET"]
 
-    X_train, X_eval, y_train, y_eval = train_test_split(
+    X_train, X_temp, y_train, y_temp = train_test_split(
         training_features,
         target_set,
-        test_size=0.2,
+        test_size=0.30,
         shuffle=True,
         stratify=target_set,
+        random_state=42,
+    )
+
+    X_val, X_eval, y_val, y_eval = train_test_split(
+        X_temp,
+        y_temp,
+        test_size=0.50,
+        shuffle=True,
+        stratify=y_temp,
         random_state=42,
     )
 
@@ -217,12 +226,27 @@ with progress:
         verbose_feature_names_out=False,
     )
     pp_lgbm.set_output(transform="pandas")
+
     X_train_lgbm = pp_lgbm.fit_transform(X_train)
+    X_val_lgbm = pp_lgbm.transform(X_val)
     X_eval_lgbm = pp_lgbm.transform(X_eval)
+
     for col in category_cols_X_train:
-        X_train_lgbm[col] = X_train_lgbm[col].astype("category")
+        categories = X_train_lgbm[col].astype("category").cat.categories
+
+        X_train_lgbm[col] = pd.Categorical(
+            X_train_lgbm[col],
+            categories=categories,
+        )
+
+        X_val_lgbm[col] = pd.Categorical(
+            X_val_lgbm[col],
+            categories=categories,
+        )
+
         X_eval_lgbm[col] = pd.Categorical(
-            X_eval_lgbm[col], categories=X_train_lgbm[col].cat.categories
+            X_eval_lgbm[col],
+            categories=categories,
         )
 
     neg_count = (y_train == 0).sum()
@@ -244,9 +268,12 @@ with progress:
     pp_catbc.set_output(transform="pandas")
 
     X_train_catbc = pp_catbc.fit_transform(X_train)
+    X_val_catbc = pp_catbc.transform(X_val)
     X_eval_catbc = pp_catbc.transform(X_eval)
+
     for col in category_cols_X_train:
         X_train_catbc[col] = X_train_catbc[col].astype(str)
+        X_val_catbc[col] = X_val_catbc[col].astype(str)
         X_eval_catbc[col] = X_eval_catbc[col].astype(str)
 
     console.print("[bold green]✅ PREPROCESSING COMPLETED[/]\n\n")
@@ -264,6 +291,7 @@ with progress:
     progress.update(parent_task, description="[magenta]PREPARING BASELINE MODELS[/]")
 
     X_train_en = pp_elasticnet.fit_transform(X_train)
+    X_val_en = pp_elasticnet.transform(X_val)
     X_eval_en = pp_elasticnet.transform(X_eval)
 
     classes = np.array([0, 1])
@@ -284,6 +312,7 @@ with progress:
     )
 
     X_train_xgb = pp_xg.fit_transform(X_train)
+    X_val_xgb = pp_xg.transform(X_val)
     X_eval_xgb = pp_xg.transform(X_eval)
 
     xgbc_base = XGBClassifier(
@@ -344,10 +373,15 @@ with progress:
     epochs_no_improve = 0
 
     for epoch in range(max_epochs):
-        sgd_base.partial_fit(X_train_en, y_train, classes=np.array([0, 1]))
 
-        val_prob = sgd_base.predict_proba(X_eval_en)[:, 1]
-        val_score = roc_auc_score(y_eval, val_prob)
+        sgd_base.partial_fit(
+            X_train_en,
+            y_train,
+            classes=classes,
+        )
+
+        val_prob = sgd_base.predict_proba(X_val_en)[:, 1]
+        val_score = roc_auc_score(y_val, val_prob)
 
         pct = min((epoch + 1) / max_epochs * 100, 100)
         progress.update(sgd_task, completed=pct)
@@ -359,17 +393,19 @@ with progress:
             epochs_no_improve += 1
 
         if epochs_no_improve >= patience:
-            break  # real early stopping, driven by your own validation check
+            break
 
     finish_sub_task(progress, sgd_task, "Elastic Net (SGD)")
 
 
     # XGBoost
     xgb_task = progress.add_task("[#BDFF08]XGBoost • Fitting...[/]", total=100)
+
     xgbc_base.callbacks = [XGBRichProgress(progress, xgb_task, 1000)]
+
     xgbc_base.fit(
         X_train_xgb, y_train,
-        eval_set=[(X_eval_xgb, y_eval)],
+        eval_set=[(X_val_xgb, y_val)],
         verbose=False,
     )
     finish_sub_task(progress, xgb_task, "XGBoost")
@@ -393,28 +429,38 @@ with progress:
         X_train_lgbm,
         y_train,
         categorical_feature=category_cols_X_train.tolist(),
-        eval_set=[(X_eval_lgbm, y_eval)],
-        callbacks=[lgbm_rich_progress, early_stopping(250, verbose=False)],
+        eval_set=[(X_val_lgbm, y_val)],
+        callbacks=[
+            lgbm_rich_progress,
+            early_stopping(250, verbose=False),
+        ],
     )
+
     finish_sub_task(progress, lgbm_task, "LightGBM")
+
     progress.update(parent_task, completed=78)
 
     # CatBoost
     catboost_task = progress.add_task("[#BDFF08]CatBoost • Fitting...[/]", total=100)
+
     catbc_base.fit(
         X_train_catbc,
         y_train,
         cat_features=category_cols_X_train.tolist(),
-        eval_set=(X_eval_catbc, y_eval),
-        callbacks=[CatBoostRichProgress(progress, catboost_task, 1000)],
+        eval_set=(X_val_catbc, y_val),
+        callbacks=[
+            CatBoostRichProgress(progress, catboost_task, 1000)
+        ],
     )
+
     finish_sub_task(progress, catboost_task, "CatBoost")
+
     progress.update(parent_task, completed=85)
 
     """
     ███╗   ███╗ ██████╗ ██████╗ ███████╗██╗         ███████╗██╗   ██╗ █████╗ ██╗     ██╗   ██╗ █████╗ ████████╗██╗ ██████╗ ███╗   ██╗
-    ████╗ ████║██╔═══██╗██╔══██╗██╔════╝██║         ██╔════╝██║   ██║███████║██║     ██║   ██║███████║   ██║   ██║██║   ██║██╔██╗ ██║
-    ██╔████╔██║██║   ██║██║  ██║█████╗  ██║         █████╗  ██║   ██║███████║██║     ██║   ██║███████║   ██║   ██║██║   ██║██╔██╗██║
+    ████╗ ████║██╔═══██╗██╔══██╗██╔════╝██║         ██╔════╝██║   ██║██╔══██╗██║     ██║   ██║██╔══██╗   ██║   ██║██║   ██║████╗  ██║
+    ██╔████╔██║██║   ██║██║  ██║█████╗  ██║         █████╗  ██║   ██║███████║██║     ██║   ██║███████║   ██║   ██║██║   ██║██╔██╗ ██║
     ██║╚██╔╝██║██║   ██║██║  ██║██╔══╝  ██║         ██╔══╝  ╚██╗ ██╔╝██╔══██║██║     ██║   ██║██╔══██║   ██║   ██║██║   ██║██║╚██╗██║
     ██║ ╚═╝ ██║╚██████╔╝██████╔╝███████╗███████╗    ███████╗ ╚████╔╝ ██║  ██║███████╗╚██████╔╝██║  ██║   ██║   ██║╚██████╔╝██║ ╚████║
     ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝    ╚══════╝  ╚═══╝  ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝
@@ -500,9 +546,17 @@ with progress:
     progress.update(parent_task, description="[#00FFFF]SAVING ARTIFACTS[/]", completed=96)
 
     joblib.dump(
-        {"X_train": X_train, "X_eval": X_eval, "y_train": y_train, "y_eval": y_eval},
+        {
+            "X_train": X_train,
+            "X_val": X_val,
+            "X_eval": X_eval,
+            "y_train": y_train,
+            "y_val": y_val,
+            "y_eval": y_eval,
+        },
         SPLIT_DATA_PATH,
     )
+
     joblib.dump(
         {
             "pp_elasticnet": pp_elasticnet,
@@ -512,6 +566,7 @@ with progress:
         },
         PREPROCESSORS_PATH,
     )
+
     joblib.dump(
         {
             "sgd_base": sgd_base,
@@ -521,6 +576,7 @@ with progress:
         },
         BASELINE_MODELS_PATH,
     )
+    
     joblib.dump(base_result, BASELINE_RESULTS_PATH)
 
     console.print(
