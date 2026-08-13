@@ -514,7 +514,7 @@ with progress:
     )
     joblib.dump(
         {
-            "sdg_base": sgd_base,
+            "sgd_base": sgd_base,
             "xgbc_base": xgbc_base,
             "lgbmc_base": lgbmc_base,
             "catbc_base": catbc_base,
