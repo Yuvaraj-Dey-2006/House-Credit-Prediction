@@ -23,7 +23,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import RobustScaler, OneHotEncoder
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import SGDClassifier
 
 from xgboost import XGBClassifier
 from xgboost.callback import TrainingCallback
@@ -262,24 +262,18 @@ with progress:
 
     progress.update(parent_task, description="[magenta]PREPARING BASELINE MODELS[/]")
 
-    pipeline_elastic_net = Pipeline(
-        [
-            ("pp_elasticnet", pp_elasticnet),
-            (
-                "en_base",
-                LogisticRegression(
-                    penalty="elasticnet",
-                    solver="saga",
-                    l1_ratio=0.5,
-                    C=1.0,
-                    max_iter=1000,
-                    class_weight="balanced",
-                    random_state=42,
-                    n_jobs=-1,
-                    tol=1e-4,
-                ),
-            ),
-        ]
+    X_train_en = pp_elasticnet.fit_transform(X_train)
+    X_eval_en = pp_elasticnet.transform(X_eval)
+
+    sgd_base = SGDClassifier(
+        loss="log_loss",
+        penalty="elasticnet",
+        l1_ratio=0.5,
+        alpha=1e-4,
+        class_weight="balanced",
+        random_state=42,
+        learning_rate="optimal",
+        n_jobs=-1,
     )
 
     X_train_xgb = pp_xg.fit_transform(X_train)
@@ -335,10 +329,32 @@ with progress:
     """
 
     # Elastic Net
-    elastic_task = progress.add_task("[#BDFF08]Elastic Net • Fitting...[/]", total=100)
-    pipeline_elastic_net.fit(X_train, y_train)
-    finish_sub_task(progress, elastic_task, "Elastic Net")
-    progress.update(parent_task, completed=50)
+    sgd_task = progress.add_task("[#BDFF08]Elastic Net (SGD) • Fitting...[/]", total=100)
+
+    max_epochs = 200
+    patience = 10
+    best_score = -np.inf
+    epochs_no_improve = 0
+
+    for epoch in range(max_epochs):
+        sgd_base.partial_fit(X_train_en, y_train, classes=np.array([0, 1]))
+
+        val_prob = sgd_base.predict_proba(X_eval_en)[:, 1]
+        val_score = roc_auc_score(y_eval, val_prob)
+
+        pct = min((epoch + 1) / max_epochs * 100, 100)
+        progress.update(sgd_task, completed=pct)
+
+        if val_score > best_score:
+            best_score = val_score
+            epochs_no_improve = 0
+        else:
+            epochs_no_improve += 1
+
+        if epochs_no_improve >= patience:
+            break  # real early stopping, driven by your own validation check
+
+    finish_sub_task(progress, sgd_task, "Elastic Net (SGD)")
 
     # XGBoost
     xgb_task = progress.add_task("[#BDFF08]XGBoost • Fitting...[/]", total=100)
@@ -398,8 +414,8 @@ with progress:
 
     progress.update(parent_task, description="[yellow]MODEL EVALUATION[/]", completed=88)
 
-    y_pred_en = pipeline_elastic_net.predict(X_eval)
-    y_prob_en = pipeline_elastic_net.predict_proba(X_eval)[:, 1]
+    y_pred_en = sgd_base.predict(X_eval)
+    y_prob_en = sgd_base.predict_proba(X_eval)[:, 1]
 
     y_pred_xgbc = xgbc_base.predict(X_eval_xgb)
     y_prob_xgbc = xgbc_base.predict_proba(X_eval_xgb)[:, 1]
@@ -490,7 +506,7 @@ with progress:
     )
     joblib.dump(
         {
-            "pipeline_elastic_net": pipeline_elastic_net,
+            "sdg_base": sgd_base,
             "xgbc_base": xgbc_base,
             "lgbmc_base": lgbmc_base,
             "catbc_base": catbc_base,
