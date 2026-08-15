@@ -78,8 +78,8 @@ progress = Progress(
 )
 
 
-def finish_sub_task(progress_obj, task_id, label):
-    progress_obj.update(task_id, completed=progress_obj.tasks[task_id].total)
+def finish_sub_task(progress_obj, task_id, label, total):
+    progress_obj.update(task_id, completed=total)
     console.print(f"[#BDFF08]{label} • Complete[/]  " + "━" * 40 + "  100%")
     progress_obj.remove_task(task_id)
 
@@ -346,7 +346,7 @@ with progress:
             callbacks=[make_rich_trial_callback(progress, trial_task, parent_task)],
             show_progress_bar=False,
         )
-        finish_sub_task(progress, trial_task, f"{name.upper()} tuning")
+        finish_sub_task(progress, trial_task, f"{name.upper()} tuning", N_TRIALS)
 
         # Store both the winning hyperparameters and the val ROC-AUC they achieved —
         # the next script (refit-best-and-predict.py) picks the better of the two from this,
