@@ -25,10 +25,12 @@ import joblib
 import optuna
 
 from sklearn.exceptions import ConvergenceWarning
+from optuna.exceptions import ExperimentalWarning
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
+warnings.filterwarnings("ignore", category=ExperimentalWarning)
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 from sklearn.utils.class_weight import compute_class_weight
@@ -134,15 +136,6 @@ baseline_result = joblib.load(BASELINE_RESULTS_PATH)
 top2_names = baseline_result.nlargest(2, "ROC-AUC")["Models"].tolist()
 top2_keys = [MODEL_NAME_TO_KEY[name] for name in top2_names]
 
-# Sorted best-to-worst, reset so row order (not the stale original index) reflects rank
-ranking_display = baseline_result[["Models", "ROC-AUC"]].sort_values("ROC-AUC", ascending=False).reset_index(drop=True)
-RANK_EMOJIS = ["🥇", "🥈", "🥉", "🏅"]  # 4th+ falls back to the generic medal
-ranking_display.insert(0, "Rank", [RANK_EMOJIS[i] if i < len(RANK_EMOJIS) else "🏅" for i in range(len(ranking_display))])
-
-console.print(f"[bold yellow]Baseline ranking (ROC-AUC):[/]")
-console.print(ranking_display.round(5).to_string(index=False))
-console.print(f"\n[bold yellow]➤ Tuning only the top 2: {top2_names}[/]\n")
-
 """
 ████████╗██████╗  █████╗ ███╗   ██╗███████╗███████╗ ██████╗ ██████╗ ███╗   ███╗
 ╚══██╔══╝██╔══██╗██╔══██╗████╗  ██║██╔════╝██╔════╝██╔═══██╗██╔══██╗████╗ ████║
@@ -150,40 +143,8 @@ console.print(f"\n[bold yellow]➤ Tuning only the top 2: {top2_names}[/]\n")
    ██║   ██╔══██╗██╔══██║██║╚██╗██║╚════██║██╔══╝  ██║   ██║██╔══██╗██║╚██╔╝██║
    ██║   ██║  ██║██║  ██║██║ ╚████║███████║██║      ╚██████╔╝██║  ██║██║ ╚═╝ ██║
    ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝       ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝
-"""
 
-# Re-fit each preprocessor fresh (fit_transform on train, transform on val) —
-# X_eval is deliberately NOT transformed here; this script never touches it.
-X_train_en = pp_elasticnet.fit_transform(X_train)
-X_val_en = pp_elasticnet.transform(X_val)
-
-X_train_xgb = pp_xg.fit_transform(X_train)
-X_val_xgb = pp_xg.transform(X_val)
-
-X_train_lgbm = pp_lgbm.fit_transform(X_train)
-X_val_lgbm = pp_lgbm.transform(X_val)
-
-for col in category_cols_X_train:
-    categories = X_train_lgbm[col].astype("category").cat.categories
-    X_train_lgbm[col] = pd.Categorical(X_train_lgbm[col], categories=categories)
-    X_val_lgbm[col] = pd.Categorical(X_val_lgbm[col], categories=categories)
-
-X_train_catbc = pp_catbc.fit_transform(X_train)
-X_val_catbc = pp_catbc.transform(X_val)
-
-for col in category_cols_X_train:
-    X_train_catbc[col] = X_train_catbc[col].astype(str)
-    X_val_catbc[col] = X_val_catbc[col].astype(str)
-
-console.print("[bold green]✅ PREPROCESSING COMPLETE[/]\n")
-
-"""
- ██████╗ ██████╗ ██╗███████╗ ██████╗████████╗██╗██╗   ██╗███████╗███████╗
-██╔═══██╗██╔══██╗██║██╔════╝██╔════╝╚══██╔══╝██║██║   ██║██╔════╝██╔════╝
-██║   ██║██████╔╝██║█████╗  ██║        ██║   ██║██║   ██║█████╗  ███████╗
-██║   ██║██╔══██╗██║██╔══╝  ██║        ██║   ██║╚██╗ ██╔╝██╔══╝  ╚════██║
-╚██████╔╝██████╔╝██║███████╗╚██████╗   ██║   ██║ ╚████╔╝ ███████╗███████║
- ╚═════╝ ╚═════╝ ╚═╝╚══════╝ ╚═════╝   ╚═╝   ╚═╝  ╚═══╝  ╚══════╝╚══════╝
+(objective functions — defined here, executed later, inside the progress block)
 """
 
 
@@ -297,7 +258,7 @@ def objective_catbc(trial):
     )
 
     pruning_callback.check_pruned()  # must be called after fit — this is what actually raises TrialPruned
-    
+
     return roc_auc_score(y_val, model.predict_proba(X_val_catbc)[:, 1])
 
 
@@ -317,14 +278,56 @@ all_objectives = {
     "catbc": objective_catbc,
 }
 studies_config = {key: all_objectives[key] for key in top2_keys}
+total_trial_budget = N_TRIALS * len(studies_config)
 
+# ═══════════════════════════════════════════════════════════════════════════
+# EVERYTHING BELOW RUNS INSIDE THE PROGRESS BAR — baseline ranking display,
+# preprocessing, tuning (per-trial), and the final save all advance one
+# shared "PIPELINE PROGRESS" bar.
+# ═══════════════════════════════════════════════════════════════════════════
 with progress:
-    total_trial_budget = N_TRIALS * len(studies_config)
     parent_task = progress.add_task(
-        "[blue]HYPERPARAMETER SEARCH[/]",
-        total=total_trial_budget + 1,  # +1 reserved for the final save step
+        "[blue]PIPELINE PROGRESS[/]",
+        total=total_trial_budget + 2,  # +1 preprocessing, +1 save
     )
 
+    # ── baseline ranking display ──
+    ranking_display = baseline_result[["Models", "ROC-AUC"]].sort_values("ROC-AUC", ascending=False).reset_index(drop=True)
+    RANK_EMOJIS = ["🥇", "🥈", "🥉", "🏅"]  # 4th+ falls back to the generic medal
+    ranking_display.insert(0, "Rank", [RANK_EMOJIS[i] if i < len(RANK_EMOJIS) else "🏅" for i in range(len(ranking_display))])
+
+    console.print(f"[bold yellow]Baseline ranking (ROC-AUC):[/]")
+    console.print(ranking_display.round(5).to_string(index=False))
+    console.print(f"\n[bold yellow]➤ Tuning only the top 2: {top2_names}[/]\n")
+
+    # ── preprocessing ──
+    # Re-fit each preprocessor fresh (fit_transform on train, transform on val) —
+    # X_eval is deliberately NOT transformed here; this script never touches it.
+    X_train_en = pp_elasticnet.fit_transform(X_train)
+    X_val_en = pp_elasticnet.transform(X_val)
+
+    X_train_xgb = pp_xg.fit_transform(X_train)
+    X_val_xgb = pp_xg.transform(X_val)
+
+    X_train_lgbm = pp_lgbm.fit_transform(X_train)
+    X_val_lgbm = pp_lgbm.transform(X_val)
+
+    for col in category_cols_X_train:
+        categories = X_train_lgbm[col].astype("category").cat.categories
+        X_train_lgbm[col] = pd.Categorical(X_train_lgbm[col], categories=categories)
+        X_val_lgbm[col] = pd.Categorical(X_val_lgbm[col], categories=categories)
+
+    X_train_catbc = pp_catbc.fit_transform(X_train)
+    X_val_catbc = pp_catbc.transform(X_val)
+
+    for col in category_cols_X_train:
+        X_train_catbc[col] = X_train_catbc[col].astype(str)
+        X_val_catbc[col] = X_val_catbc[col].astype(str)
+
+    console.print("[bold green]✅ PREPROCESSING COMPLETE[/]\n")
+    progress.update(parent_task, advance=1, description="[blue]HYPERPARAMETER SEARCH[/]")
+
+    # ── tuning ──
     best_params = {}
     for name, objective_fn in studies_config.items():
         console.print(f"[bold magenta]▶ Tuning {name.upper()}[/]")
@@ -345,15 +348,21 @@ with progress:
         )
         finish_sub_task(progress, trial_task, f"{name.upper()} tuning")
 
+        # Store both the winning hyperparameters and the val ROC-AUC they achieved —
+        # the next script (refit-best-and-predict.py) picks the better of the two from this,
+        # without needing to re-run Optuna or recompute anything.
         best_params[name] = {"params": study.best_params, "val_roc_auc": study.best_value}
+
         console.print(f"[green]  Best ROC-AUC (val): {study.best_value:.5f}[/]")
         console.print(f"[green]  Best params: {study.best_params}[/]\n")
 
+    # ── save ──
     joblib.dump(best_params, BEST_PARAMS_PATH)
     progress.update(parent_task, advance=1, description="[green]TUNING COMPLETE[/]")
 
-joblib.dump(best_params, BEST_PARAMS_PATH)
-
+# ═══════════════════════════════════════════════════════════════════════════
+# summary — outside the bar, bar is closed by now
+# ═══════════════════════════════════════════════════════════════════════════
 console.print("\n______________________________________ TUNING SUMMARY (VALIDATION ROC-AUC) ______________________________________\n")
 for name, info in best_params.items():
     console.print(f"  {name.upper():<8} → {info['val_roc_auc']:.5f}")
