@@ -194,7 +194,7 @@ def objective_xgb(trial):
         "eval_metric": "auc",
         "random_state": 42,
         "n_jobs": -1,
-        "early_stopping_rounds": 100,
+        "early_stopping_rounds": 250,  # matches baseline's patience
     }
     model = XGBClassifier(**params, callbacks=[XGBoostPruningCallback(trial, "validation_0-auc")])
     model.fit(X_train_xgb, y_train, eval_set=[(X_val_xgb, y_val)], verbose=False)
@@ -204,7 +204,7 @@ def objective_xgb(trial):
 def objective_lgbm(trial):
     params = {
         "num_leaves": trial.suggest_int("num_leaves", 15, 255),
-        "max_depth": trial.suggest_int("max_depth", 3, 12),
+        "max_depth": trial.suggest_int("max_depth", -1, 12),  # -1 = unlimited, matches baseline's config
         "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
         "n_estimators": 1000,
         "subsample": trial.suggest_float("subsample", 0.6, 1.0),
@@ -224,7 +224,7 @@ def objective_lgbm(trial):
         y_train,
         categorical_feature=category_cols_X_train.tolist(),
         eval_set=[(X_val_lgbm, y_val)],
-        callbacks=[early_stopping(100, verbose=False), LightGBMPruningCallback(trial, "auc")],
+        callbacks=[early_stopping(250, verbose=False), LightGBMPruningCallback(trial, "auc")],  # matches baseline's patience
     )
     return roc_auc_score(y_val, model.predict_proba(X_val_lgbm)[:, 1])
 
@@ -242,7 +242,7 @@ def objective_catbc(trial):
         "auto_class_weights": "Balanced",
         "random_seed": 42,
         "verbose": 0,
-        "early_stopping_rounds": 100,
+        "early_stopping_rounds": 250,  # matches baseline's patience
         "allow_writing_files": False,
     }
 
@@ -279,6 +279,37 @@ all_objectives = {
 }
 studies_config = {key: all_objectives[key] for key in top2_keys}
 total_trial_budget = N_TRIALS * len(studies_config)
+
+# Baseline's own hyperparameters, used to seed each study's first trial (via enqueue_trial)
+# so tuning is guaranteed at least one point as good as baseline before TPE explores further.
+BASELINE_SEED_PARAMS = {
+    "xgb": {  # baseline used XGBClassifier's library defaults for these
+        "max_depth": 6,
+        "learning_rate": 0.3,
+        "subsample": 1.0,
+        "colsample_bytree": 1.0,
+        "min_child_weight": 1,
+        "reg_alpha": 1e-8,   # library default is 0, but search space is log-scale (>0 required)
+        "reg_lambda": 1.0,
+    },
+    "lgbm": {
+        "num_leaves": 31,
+        "max_depth": -1,
+        "learning_rate": 0.05,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "min_child_samples": 20,   # LightGBM default
+        "reg_alpha": 1e-8,   # baseline effectively used 0, but the search space is log-scale (>0 required)
+        "reg_lambda": 1e-8,
+    },
+    "catbc": {
+        "depth": 6,
+        "learning_rate": 0.05,
+        "l2_leaf_reg": 3.0,        # CatBoost default
+        "bagging_temperature": 1.0,  # CatBoost default
+        "random_strength": 1.0,      # CatBoost default
+    },
+}
 
 # ═══════════════════════════════════════════════════════════════════════════
 # EVERYTHING BELOW RUNS INSIDE THE PROGRESS BAR — baseline ranking display,
@@ -334,11 +365,18 @@ with progress:
         study = optuna.create_study(
             direction="maximize",
             sampler=optuna.samplers.TPESampler(seed=42),
-            pruner=optuna.pruners.MedianPruner(n_warmup_steps=5),
+            pruner=optuna.pruners.MedianPruner(n_warmup_steps=250, interval_steps=25),
             study_name=f"{name}_home_credit",
             storage=OPTUNA_DB_PATH,
             load_if_exists=True,
         )
+
+        # Seed with baseline's own config so the study can't finish worse than baseline —
+        # only on a fresh study (skip on resume, since trial 0 would already have it).
+        seed_params = BASELINE_SEED_PARAMS.get(name)
+        if seed_params and len(study.trials) == 0:
+            study.enqueue_trial(seed_params)
+
         trial_task = progress.add_task(f"[#BDFF08]{name.upper()} • Optuna trials[/]", total=N_TRIALS)
         study.optimize(
             objective_fn,
