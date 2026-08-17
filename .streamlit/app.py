@@ -1,0 +1,652 @@
+import base64
+from pathlib import Path
+
+import joblib
+import numpy as np
+import pandas as pd
+import streamlit as st
+
+
+APP_DIR = Path(__file__).resolve().parent
+ROOT = APP_DIR.parent
+ARTIFACTS_DIR = ROOT / "Artifacts"
+DATA_DIR = ROOT / "Processed Datasets"
+PLOTS_DIR = ROOT / "EDA" / "Plots"
+
+BASELINE_MODELS_PATH = ARTIFACTS_DIR / "baseline_models.joblib"
+PREPROCESSORS_PATH = ARTIFACTS_DIR / "preprocessors.joblib"
+BASELINE_RESULTS_PATH = ARTIFACTS_DIR / "base_result.joblib"
+BEST_PARAMS_PATH = ARTIFACTS_DIR / "best_params.joblib"
+SAMPLE_DATA_PATH = DATA_DIR / "final_train_cleaned.csv"
+SUN_ICON_PATH = APP_DIR / "assets" / "sun.svg"
+MOON_ICON_PATH = APP_DIR / "assets" / "moon.svg"
+PROFILE_IMAGE_PATH = APP_DIR / "assets" / "profile.png"
+
+MODEL_OPTIONS = {
+    "CatBoost Classifier": ("catbc_base", "pp_catbc", "catboost"),
+    "LightGBM Classifier": ("lgbmc_base", "pp_lgbm", "lightgbm"),
+    "XG Boost Classifier": ("xgbc_base", "pp_xg", "xgboost"),
+    "Elastic Net log reg": ("sgd_base", "pp_elasticnet", "elasticnet"),
+}
+
+
+st.set_page_config(
+    page_title="House Credit Prediction",
+    page_icon="H",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+
+def svg_mask_url(path):
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f'url("data:image/svg+xml;base64,{encoded}")'
+
+
+def image_data_url(path):
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
+def apply_theme(dark_mode):
+    sun_icon = svg_mask_url(SUN_ICON_PATH)
+    moon_icon = svg_mask_url(MOON_ICON_PATH)
+
+    if dark_mode:
+        colors = {
+            "app_bg": "#0f172a",
+            "panel_bg": "#111827",
+            "soft_bg": "#1e293b",
+            "sidebar_bg": "#172033",
+            "sidebar_text": "#e6edf7",
+            "sidebar_muted": "#b8c5d6",
+            "tab_text": "#dbe8f6",
+            "dropzone_bg": "#f8fafc",
+            "dropzone_text": "#0f172a",
+            "input_bg": "#f8fafc",
+            "input_text": "#0f172a",
+            "text": "#e5edf6",
+            "muted": "#a8b3c2",
+            "border": "#334155",
+            "accent": "#2dd4bf",
+            "accent_soft": "#123a3c",
+            "theme_icon": moon_icon,
+            "theme_icon_rotation": "360deg",
+        }
+    else:
+        colors = {
+            "app_bg": "#ffffff",
+            "panel_bg": "#ffffff",
+            "soft_bg": "#f8fafc",
+            "sidebar_bg": "#eef6f7",
+            "sidebar_text": "#102338",
+            "sidebar_muted": "#486176",
+            "tab_text": "#0f172a",
+            "dropzone_bg": "#ffffff",
+            "dropzone_text": "#0f172a",
+            "input_bg": "#ffffff",
+            "input_text": "#0f172a",
+            "text": "#0f172a",
+            "muted": "#475569",
+            "border": "#d8e2ec",
+            "accent": "#0f766e",
+            "accent_soft": "#f8fbfb",
+            "theme_icon": sun_icon,
+            "theme_icon_rotation": "0deg",
+        }
+
+    css_vars = "\n".join(f"        --{key.replace('_', '-')}: {value};" for key, value in colors.items())
+    st.markdown(
+        """
+    <style>
+    :root {
+__CSS_VARS__
+    }
+    .stApp,
+    [data-testid="stAppViewContainer"],
+    [data-testid="stHeader"] {
+        background: var(--app-bg);
+        color: var(--text);
+    }
+    [data-testid="stSidebar"] {
+        background: var(--sidebar-bg);
+        border-right: 1px solid var(--border);
+    }
+    [data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
+        padding-top: 0.45rem;
+    }
+    [data-testid="stSidebar"] * {
+        color: var(--sidebar-text);
+    }
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] small,
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
+        color: var(--sidebar-text);
+    }
+    [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+        color: var(--sidebar-muted);
+    }
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3 {
+        color: var(--sidebar-text);
+    }
+    [data-testid="stSidebar"] hr {
+        border-color: var(--border);
+    }
+    [data-testid="stSidebar"] div[data-baseweb="select"] > div,
+    [data-testid="stSidebar"] input {
+        background: var(--input-bg);
+        color: var(--input-text);
+        border-color: var(--border);
+    }
+    [data-testid="stSidebar"] div[data-baseweb="select"] span,
+    [data-testid="stSidebar"] div[data-baseweb="select"] svg,
+    [data-testid="stSidebar"] input {
+        color: var(--input-text);
+        fill: var(--input-text);
+    }
+    [data-testid="stSidebar"] [data-testid="stSlider"] [role="slider"] {
+        background: var(--accent);
+        border-color: var(--accent);
+    }
+    [data-testid="stSidebar"] [data-testid="stSlider"] div {
+        color: var(--sidebar-muted);
+    }
+    .profile-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.65rem;
+        padding: 2.65rem 0 1.05rem;
+        margin-bottom: 0.35rem;
+        border-bottom: 1px solid var(--border);
+    }
+    .profile-photo {
+        width: 104px;
+        height: 104px;
+        border-radius: 999px;
+        object-fit: cover;
+        object-position: center 34%;
+        border: 3px solid var(--accent);
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.28);
+    }
+    .profile-name {
+        color: var(--sidebar-text);
+        font-size: 1.05rem;
+        font-weight: 700;
+        line-height: 1.2;
+        text-align: center;
+    }
+    .main .block-container {
+        padding-top: 1.4rem;
+        max-width: 1240px;
+    }
+    h1, h2, h3 {
+        letter-spacing: 0;
+        color: var(--text);
+    }
+    p, label, span, div {
+        color: inherit;
+    }
+    div[data-testid="stMetric"] {
+        background: var(--soft-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.8rem 0.9rem;
+    }
+    div[data-testid="stMetric"] label {
+        color: var(--muted);
+    }
+    div[data-testid="stMetricValue"] {
+        color: var(--text);
+        white-space: normal;
+        overflow-wrap: anywhere;
+        line-height: 1.05;
+        font-size: clamp(1.35rem, 2.1vw, 2rem);
+    }
+    [data-testid="stWidgetLabel"] p,
+    [data-testid="stWidgetLabel"] label {
+        color: var(--muted);
+    }
+    [data-testid="stTabs"] button,
+    [data-testid="stTabs"] button p {
+        color: var(--tab-text);
+    }
+    [data-testid="stTabs"] button[aria-selected="true"],
+    [data-testid="stTabs"] button[aria-selected="true"] p {
+        color: var(--accent);
+    }
+    [data-testid="stFileUploaderDropzone"] {
+        background: var(--dropzone-bg);
+        border-color: var(--border);
+    }
+    [data-testid="stFileUploader"] section,
+    [data-testid="stFileUploader"] section div {
+        background: var(--dropzone-bg);
+    }
+    [data-testid="stFileUploaderDropzone"] *,
+    [data-testid="stFileUploader"] section *,
+    [data-testid="stFileUploader"] button *,
+    [data-testid="stFileUploaderDropzone"] small,
+    [data-testid="stFileUploaderDropzone"] span,
+    [data-testid="stFileUploaderDropzone"] p {
+        color: var(--dropzone-text) !important;
+        fill: var(--dropzone-text) !important;
+    }
+    [data-testid="stFileUploader"] button {
+        background: #e5e7eb;
+        border-color: #cbd5e1;
+        color: var(--dropzone-text) !important;
+    }
+    [data-testid="stFileUploaderFile"] svg,
+    [data-testid="stFileUploaderFile"] button {
+        display: none;
+    }
+    [data-testid="stFileUploaderFile"] {
+        color: var(--dropzone-text) !important;
+    }
+    [data-testid="stFileUploaderFile"] *,
+    [data-testid="stFileUploaderFile"] p,
+    [data-testid="stFileUploaderFile"] small,
+    [data-testid="stFileUploaderFile"] span {
+        color: var(--dropzone-text) !important;
+    }
+    [data-testid="stElementToolbar"],
+    [data-testid="stElementToolbar"] button {
+        background: #ffffff;
+        color: #0f172a !important;
+    }
+    [data-testid="stElementToolbar"] *,
+    div[role="tooltip"],
+    div[role="tooltip"] * {
+        color: #0f172a !important;
+        fill: #0f172a !important;
+    }
+    div[role="tooltip"] {
+        background: #ffffff !important;
+        border: 1px solid #cbd5e1;
+    }
+    div[data-testid="stNumberInput"] input {
+        background: var(--input-bg);
+        color: var(--input-text);
+    }
+    .status-band {
+        border: 1px solid var(--border);
+        border-left: 6px solid var(--accent);
+        border-radius: 8px;
+        padding: 0.85rem 1rem;
+        background: var(--accent-soft);
+        color: var(--text);
+        margin: 0.4rem 0 1.2rem;
+    }
+    div[data-testid="stDataFrame"],
+    div[data-testid="stTable"] {
+        border-color: var(--border);
+    }
+    .theme-toggle-wrap {
+        display: flex;
+        justify-content: flex-end;
+        min-height: 1px;
+    }
+    .st-key-theme_icon_button {
+        align-items: flex-start;
+        position: fixed;
+        top: 0.72rem;
+        left: 0.78rem;
+        z-index: 999999;
+        margin: 0;
+    }
+    .st-key-theme_icon_button div[data-testid="stButton"] {
+        display: flex;
+        justify-content: flex-start;
+    }
+    .st-key-theme_icon_button button {
+        position: relative;
+        display: grid;
+        place-items: center;
+        width: 46px;
+        height: 46px;
+        min-height: 46px;
+        padding: 0;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--soft-bg);
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
+        transition:
+            background 180ms ease,
+            border-color 180ms ease,
+            box-shadow 180ms ease,
+            transform 180ms ease;
+    }
+    .st-key-theme_icon_button button:hover {
+        border-color: var(--accent);
+        transform: translateY(-1px);
+        box-shadow: 0 14px 28px rgba(15, 23, 42, 0.24);
+    }
+    .st-key-theme_icon_button button p {
+        width: 0;
+        height: 0;
+        overflow: hidden;
+        opacity: 0;
+        position: absolute;
+    }
+    .st-key-theme_icon_button button::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        width: 28px;
+        height: 28px;
+        display: block;
+        margin: auto;
+        background-color: var(--text);
+        -webkit-mask: var(--theme-icon) center / contain no-repeat;
+        mask: var(--theme-icon) center / contain no-repeat;
+        transition:
+            transform 260ms ease,
+            opacity 180ms ease,
+            background-color 180ms ease;
+        transform: rotate(var(--theme-icon-rotation)) scale(1);
+    }
+    .st-key-theme_icon_button button:hover::before {
+        transform: rotate(var(--theme-icon-rotation)) scale(1.08);
+        background-color: var(--accent);
+    }
+    </style>
+        """.replace("__CSS_VARS__", css_vars),
+        unsafe_allow_html=True,
+    )
+
+
+@st.cache_resource(show_spinner="Loading trained artifacts...")
+def load_artifacts():
+    missing = [
+        path
+        for path in [BASELINE_MODELS_PATH, PREPROCESSORS_PATH, BASELINE_RESULTS_PATH]
+        if not path.exists()
+    ]
+    if missing:
+        missing_names = ", ".join(str(path.relative_to(ROOT)) for path in missing)
+        raise FileNotFoundError(f"Missing required artifact(s): {missing_names}")
+
+    return {
+        "models": joblib.load(BASELINE_MODELS_PATH),
+        "preprocessors": joblib.load(PREPROCESSORS_PATH),
+        "results": joblib.load(BASELINE_RESULTS_PATH),
+        "best_params": joblib.load(BEST_PARAMS_PATH) if BEST_PARAMS_PATH.exists() else {},
+    }
+
+
+@st.cache_data(show_spinner="Reading sample applicants...")
+def load_sample_data(n_rows=5000):
+    if not SAMPLE_DATA_PATH.exists():
+        return pd.DataFrame()
+    return pd.read_csv(SAMPLE_DATA_PATH, nrows=n_rows)
+
+
+def get_expected_features(preprocessors):
+    for preprocessor in preprocessors.values():
+        feature_names = getattr(preprocessor, "feature_names_in_", None)
+        if feature_names is not None:
+            return list(feature_names)
+    sample_df = load_sample_data()
+    return [
+        col
+        for col in sample_df.columns
+        if col not in {"TARGET", "SK_ID_CURR"}
+    ]
+
+
+def prepare_features(df, expected_features):
+    cleaned = df.copy()
+    cleaned = cleaned.drop(columns=["TARGET", "SK_ID_CURR"], errors="ignore")
+
+    for column in expected_features:
+        if column not in cleaned.columns:
+            cleaned[column] = np.nan
+
+    return cleaned[expected_features]
+
+
+def transform_for_model(features, preprocessor, model_family):
+    transformed = preprocessor.transform(features)
+
+    if model_family == "catboost" and isinstance(transformed, pd.DataFrame):
+        object_columns = transformed.select_dtypes(include=["object", "category", "string"]).columns
+        for column in object_columns:
+            transformed[column] = transformed[column].astype(str)
+
+    if model_family == "lightgbm" and isinstance(transformed, pd.DataFrame):
+        object_columns = transformed.select_dtypes(include=["object", "string"]).columns
+        for column in object_columns:
+            transformed[column] = transformed[column].astype("category")
+
+    return transformed
+
+
+def predict_credit_risk(raw_df, model_name, artifacts):
+    model_key, preprocessor_key, model_family = MODEL_OPTIONS[model_name]
+    expected_features = get_expected_features(artifacts["preprocessors"])
+    features = prepare_features(raw_df, expected_features)
+    transformed = transform_for_model(
+        features,
+        artifacts["preprocessors"][preprocessor_key],
+        model_family,
+    )
+    probabilities = artifacts["models"][model_key].predict_proba(transformed)[:, 1]
+    return pd.DataFrame(
+        {
+            "default_probability": probabilities,
+            "risk_band": pd.cut(
+                probabilities,
+                bins=[-0.001, 0.2, 0.5, 1.0],
+                labels=["Low", "Moderate", "High"],
+            ).astype(str),
+        },
+        index=raw_df.index,
+    )
+
+
+def format_percent(value):
+    return f"{value:.1%}"
+
+
+def render_artifact_status(best_params, deployed_model_name):
+    if best_params:
+        tuned_models = ", ".join(name.upper() for name in best_params)
+        text = (
+            f"Deployed model: {deployed_model_name}. "
+            f"Tuning results found for {tuned_models}; scoring uses the best saved model artifact available."
+        )
+    else:
+        text = f"Deployed model: {deployed_model_name}. Scoring uses the best saved baseline model artifact."
+    st.markdown(f"<div class='status-band'>{text}</div>", unsafe_allow_html=True)
+
+
+try:
+    artifacts = load_artifacts()
+except Exception as exc:
+    st.error(str(exc))
+    st.stop()
+
+sample_df = load_sample_data()
+expected_features = get_expected_features(artifacts["preprocessors"])
+results = artifacts["results"].copy()
+results = results.sort_values("ROC-AUC", ascending=False).reset_index(drop=True)
+model_name = results.loc[0, "Models"] if not results.empty else "CatBoost Classifier"
+
+if "dark_theme" not in st.session_state:
+    st.session_state.dark_theme = False
+
+apply_theme(st.session_state.dark_theme)
+
+st.title("House Credit Prediction")
+st.caption("Interactive credit-default risk scoring from the selected best Home Credit model.")
+
+render_artifact_status(artifacts["best_params"], model_name)
+
+with st.sidebar:
+    if st.button("Toggle theme", help="Switch theme", key="theme_icon_button"):
+        st.session_state.dark_theme = not st.session_state.dark_theme
+        st.rerun()
+    st.markdown(
+        f"""
+        <div class="profile-card">
+            <img class="profile-photo" src="{image_data_url(PROFILE_IMAGE_PATH)}" alt="Yuvaraj Dey profile photo">
+            <div class="profile-name">Yuvaraj Dey</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.header("Scoring")
+    st.write(f"Deployed model: **{model_name}**")
+    threshold = st.slider(
+        "High-risk threshold",
+        min_value=0.05,
+        max_value=0.95,
+        value=0.50,
+        step=0.05,
+    )
+    st.divider()
+    st.write(f"Expected features: **{len(expected_features)}**")
+    st.write(f"Sample rows loaded: **{len(sample_df):,}**")
+
+metric_cols = st.columns(4)
+if not results.empty:
+    best_row = results.iloc[0]
+    metric_cols[0].metric("Best ROC-AUC", format_percent(best_row["ROC-AUC"]))
+    metric_cols[1].metric("Recall", format_percent(best_row["RECALL"]))
+    metric_cols[2].metric("Precision", format_percent(best_row["PRECISION"]))
+    metric_cols[3].metric("Accuracy", format_percent(best_row["ACCURACY"]))
+
+tab_score, tab_batch, tab_metrics, tab_eda = st.tabs(
+    ["Applicant Score", "Batch Score", "Model Metrics", "EDA"]
+)
+
+with tab_score:
+    left, right = st.columns([0.38, 0.62], gap="large")
+
+    with left:
+        st.subheader("Applicant")
+        if sample_df.empty:
+            st.warning("Sample data is unavailable. Use the batch tab to upload a CSV.")
+            selected = pd.DataFrame()
+        else:
+            id_values = sample_df["SK_ID_CURR"] if "SK_ID_CURR" in sample_df.columns else pd.Series(dtype="int64")
+            default_applicant_id = int(id_values.iloc[0]) if not id_values.empty else 0
+            typed_applicant_id = st.number_input(
+                "Applicant ID",
+                min_value=0,
+                value=default_applicant_id,
+                step=1,
+                format="%d",
+            )
+            matched_rows = sample_df.index[id_values == typed_applicant_id].tolist()
+
+            if matched_rows:
+                row_number = matched_rows[0]
+                selected = sample_df.iloc[[row_number]]
+                actual_target = selected.get("TARGET", pd.Series(["Unknown"])).iloc[0]
+                st.metric("Sample row", row_number)
+                st.metric("Actual target", actual_target)
+            else:
+                selected = pd.DataFrame()
+                st.warning("Applicant ID was not found in the loaded sample rows.")
+
+    with right:
+        st.subheader("Prediction")
+        if not selected.empty:
+            prediction = predict_credit_risk(selected, model_name, artifacts)
+            probability = float(prediction["default_probability"].iloc[0])
+            decision = "High risk" if probability >= threshold else "Standard"
+
+            score_cols = st.columns([0.35, 0.35, 0.30])
+            score_cols[0].metric("Default probability", format_percent(probability))
+            score_cols[1].metric("Risk band", prediction["risk_band"].iloc[0])
+            score_cols[2].metric("Decision", decision)
+            st.progress(min(max(probability, 0.0), 1.0))
+
+            preview_cols = [
+                col
+                for col in [
+                    "AMT_CREDIT",
+                    "AMT_INCOME_TOTAL",
+                    "AMT_ANNUITY",
+                    "DAYS_BIRTH",
+                    "DAYS_EMPLOYED",
+                    "EXT_SOURCE_1",
+                    "EXT_SOURCE_2",
+                    "EXT_SOURCE_3",
+                ]
+                if col in selected.columns
+            ]
+            if preview_cols:
+                st.dataframe(selected[preview_cols], use_container_width=True, hide_index=True)
+
+with tab_batch:
+    st.subheader("Upload Applicants")
+    uploaded_file = st.file_uploader("CSV file", type=["csv"])
+
+    if uploaded_file is not None:
+        upload_df = pd.read_csv(uploaded_file)
+        missing_columns = sorted(set(expected_features) - set(upload_df.columns))
+        predictions = predict_credit_risk(upload_df, model_name, artifacts)
+        scored = pd.concat([upload_df.reset_index(drop=True), predictions.reset_index(drop=True)], axis=1)
+        scored["above_threshold"] = scored["default_probability"] >= threshold
+
+        batch_cols = st.columns(3)
+        batch_cols[0].metric("Rows scored", f"{len(scored):,}")
+        batch_cols[1].metric("Average probability", format_percent(scored["default_probability"].mean()))
+        batch_cols[2].metric("Above threshold", f"{int(scored['above_threshold'].sum()):,}")
+
+        if missing_columns:
+            st.warning(
+                f"{len(missing_columns)} expected feature(s) were missing and filled with blank values."
+            )
+
+        st.dataframe(
+            scored[["default_probability", "risk_band", "above_threshold"] + list(upload_df.columns[:8])],
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info("Upload a CSV with the same feature columns as the cleaned training data.")
+
+with tab_metrics:
+    st.subheader("Baseline Model Comparison")
+    display_results = results.copy()
+    for column in ["ACCURACY", "PRECISION", "RECALL", "F1", "ROC-AUC"]:
+        display_results[column] = display_results[column].map(format_percent)
+    st.dataframe(display_results, use_container_width=True, hide_index=True)
+
+    chart_data = results.set_index("Models")[["ROC-AUC", "RECALL", "PRECISION", "F1"]]
+    st.bar_chart(chart_data)
+
+    if artifacts["best_params"]:
+        st.subheader("Saved Tuning Summary")
+        tuning_rows = []
+        for model_key, info in artifacts["best_params"].items():
+            tuning_rows.append(
+                {
+                    "Model": model_key.upper(),
+                    "Validation ROC-AUC": info.get("val_roc_auc"),
+                    "Parameters": info.get("params"),
+                }
+            )
+        st.dataframe(pd.DataFrame(tuning_rows), use_container_width=True, hide_index=True)
+
+with tab_eda:
+    st.subheader("Project EDA")
+    plot_paths = sorted(PLOTS_DIR.glob("*.png")) if PLOTS_DIR.exists() else []
+    if plot_paths:
+        selected_plot = st.selectbox(
+            "Plot",
+            options=plot_paths,
+            format_func=lambda path: path.stem,
+        )
+        st.image(str(selected_plot), use_container_width=True)
+    else:
+        st.info("No EDA plot images were found.")
