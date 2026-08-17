@@ -17,6 +17,7 @@ BASELINE_MODELS_PATH = ARTIFACTS_DIR / "baseline_models.joblib"
 PREPROCESSORS_PATH = ARTIFACTS_DIR / "preprocessors.joblib"
 BASELINE_RESULTS_PATH = ARTIFACTS_DIR / "base_result.joblib"
 BEST_PARAMS_PATH = ARTIFACTS_DIR / "best_params.joblib"
+FINAL_MODEL_PATH = ARTIFACTS_DIR / "final_model.joblib"
 SAMPLE_DATA_PATH = DATA_DIR / "final_train_cleaned.csv"
 SUN_ICON_PATH = APP_DIR / "assets" / "sun.svg"
 MOON_ICON_PATH = APP_DIR / "assets" / "moon.svg"
@@ -377,6 +378,7 @@ def load_artifacts():
         "preprocessors": joblib.load(PREPROCESSORS_PATH),
         "results": joblib.load(BASELINE_RESULTS_PATH),
         "best_params": joblib.load(BEST_PARAMS_PATH) if BEST_PARAMS_PATH.exists() else {},
+        "final_model": joblib.load(FINAL_MODEL_PATH) if FINAL_MODEL_PATH.exists() else None,
     }
 
 
@@ -398,6 +400,13 @@ def get_expected_features(preprocessors):
         for col in sample_df.columns
         if col not in {"TARGET", "SK_ID_CURR"}
     ]
+
+
+def get_active_features(artifacts):
+    final_model = artifacts.get("final_model")
+    if final_model:
+        return final_model["feature_names"]
+    return get_expected_features(artifacts["preprocessors"])
 
 
 def prepare_features(df, expected_features):
@@ -428,6 +437,28 @@ def transform_for_model(features, preprocessor, model_family):
 
 
 def predict_credit_risk(raw_df, model_name, artifacts):
+    final_model = artifacts.get("final_model")
+    if final_model:
+        expected_features = final_model["feature_names"]
+        features = prepare_features(raw_df, expected_features)
+        transformed = transform_for_model(
+            features,
+            final_model["preprocessor"],
+            final_model["model_family"],
+        )
+        probabilities = final_model["model"].predict_proba(transformed)[:, 1]
+        return pd.DataFrame(
+            {
+                "default_probability": probabilities,
+                "risk_band": pd.cut(
+                    probabilities,
+                    bins=[-0.001, 0.2, 0.5, 1.0],
+                    labels=["Low", "Moderate", "High"],
+                ).astype(str),
+            },
+            index=raw_df.index,
+        )
+
     model_key, preprocessor_key, model_family = MODEL_OPTIONS[model_name]
     expected_features = get_expected_features(artifacts["preprocessors"])
     features = prepare_features(raw_df, expected_features)
@@ -454,7 +485,15 @@ def format_percent(value):
     return f"{value:.1%}"
 
 
-def render_artifact_status(best_params, deployed_model_name):
+def render_artifact_status(best_params, deployed_model_name, final_model):
+    if final_model:
+        text = (
+            f"Deployed model: {deployed_model_name}. "
+            f"This final artifact was refit on all {final_model['trained_rows']:,} cleaned training rows."
+        )
+        st.markdown(f"<div class='status-band'>{text}</div>", unsafe_allow_html=True)
+        return
+
     if best_params:
         tuned_models = ", ".join(name.upper() for name in best_params)
         text = (
@@ -473,10 +512,14 @@ except Exception as exc:
     st.stop()
 
 sample_df = load_sample_data()
-expected_features = get_expected_features(artifacts["preprocessors"])
+expected_features = get_active_features(artifacts)
 results = artifacts["results"].copy()
 results = results.sort_values("ROC-AUC", ascending=False).reset_index(drop=True)
-model_name = results.loc[0, "Models"] if not results.empty else "CatBoost Classifier"
+model_name = (
+    artifacts["final_model"]["model_name"]
+    if artifacts["final_model"]
+    else results.loc[0, "Models"] if not results.empty else "CatBoost Classifier"
+)
 
 if "dark_theme" not in st.session_state:
     st.session_state.dark_theme = False
@@ -486,7 +529,7 @@ apply_theme(st.session_state.dark_theme)
 st.title("House Credit Prediction")
 st.caption("Interactive credit-default risk scoring from the selected best Home Credit model.")
 
-render_artifact_status(artifacts["best_params"], model_name)
+render_artifact_status(artifacts["best_params"], model_name, artifacts["final_model"])
 
 with st.sidebar:
     if st.button("Toggle theme", help="Switch theme", key="theme_icon_button"):
@@ -507,7 +550,7 @@ with st.sidebar:
         "High-risk threshold",
         min_value=0.05,
         max_value=0.95,
-        value=0.50,
+        value=float(artifacts["final_model"].get("threshold", 0.48)) if artifacts["final_model"] else 0.50,
         step=0.05,
     )
     st.divider()
