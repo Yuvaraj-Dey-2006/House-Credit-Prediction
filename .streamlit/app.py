@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-
 APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 ARTIFACTS_DIR = ROOT / "Artifacts"
@@ -71,6 +70,7 @@ def apply_theme(dark_mode):
             "border": "#334155",
             "accent": "#2dd4bf",
             "accent_soft": "#123a3c",
+            "progress_track": "#334155",
             "theme_icon": moon_icon,
             "theme_icon_rotation": "360deg",
         }
@@ -92,11 +92,14 @@ def apply_theme(dark_mode):
             "border": "#d8e2ec",
             "accent": "#0f766e",
             "accent_soft": "#f8fbfb",
+            "progress_track": "#dfeaf7",
             "theme_icon": sun_icon,
             "theme_icon_rotation": "0deg",
         }
 
-    css_vars = "\n".join(f"        --{key.replace('_', '-')}: {value};" for key, value in colors.items())
+    css_vars = "\n".join(
+        f"        --{key.replace('_', '-')}: {value};" for key, value in colors.items()
+    )
     st.markdown(
         """
     <style>
@@ -156,6 +159,98 @@ __CSS_VARS__
     }
     [data-testid="stSidebar"] [data-testid="stSlider"] div {
         color: var(--sidebar-muted);
+    }
+    [data-testid="stTextInput"] input,
+    [data-testid="stNumberInput"] input,
+    [data-testid="stTextArea"] textarea,
+    [data-testid="stSelectbox"] div[role="combobox"],
+    [data-testid="stSelectbox"] > div > div,
+    [data-testid="stFileUploaderDropzone"],
+    [data-testid="stFileUploader"] section,
+    [data-testid="stFileUploader"] button,
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="select"] input,
+    div[data-baseweb="select"] div[role="button"] {
+        background: var(--input-bg) !important;
+        color: var(--input-text) !important;
+        border-color: var(--border) !important;
+    }
+    [data-testid="stTextInput"] input::placeholder,
+    [data-testid="stNumberInput"] input::placeholder,
+    [data-testid="stTextArea"] textarea::placeholder,
+    [data-testid="stFileUploaderDropzone"] *,
+    [data-testid="stFileUploader"] section *,
+    [data-testid="stFileUploader"] button *,
+    div[data-baseweb="select"] * {
+        color: var(--input-text) !important;
+        fill: var(--input-text) !important;
+    }
+    [data-testid="stFileUploaderDropzone"] {
+        background: var(--soft-bg) !important;
+        border: 1px dashed var(--border) !important;
+        border-radius: 10px;
+    }
+    [data-testid="stFileUploader"] button {
+        background: linear-gradient(180deg, #f8fafc, #eef2f7) !important;
+        color: #0f172a !important;
+        border: 1px solid rgba(148, 163, 184, 0.75) !important;
+        border-radius: 8px;
+        font-weight: 500;
+        box-shadow: none !important;
+        min-height: 1.9rem;
+        padding-top: 0.22rem;
+        padding-bottom: 0.22rem;
+        padding-left: 0.8rem;
+        padding-right: 0.8rem;
+        line-height: 1.2;
+    }
+    [data-testid="stFileUploader"] button:hover {
+        border-color: rgba(15, 118, 110, 0.9) !important;
+        background: #f1f5f9 !important;
+        box-shadow: none !important;
+    }
+    [data-testid="stFileUploaderFile"] {
+        background: var(--soft-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text) !important;
+    }
+    [data-testid="stFileUploaderFile"] * {
+        color: var(--text) !important;
+    }
+    div[data-testid="stDataFrame"],
+    div[data-testid="stTable"],
+    .stDataFrame {
+        background: var(--panel-bg);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    div[data-testid="stDataFrame"] > div,
+    div[data-testid="stTable"] > div {
+        background: var(--panel-bg);
+    }
+    div[data-testid="stDataFrame"] table,
+    div[data-testid="stTable"] table {
+        background: var(--panel-bg);
+        color: var(--text);
+    }
+    div[data-testid="stDataFrame"] th,
+    div[data-testid="stDataFrame"] td,
+    div[data-testid="stTable"] th,
+    div[data-testid="stTable"] td {
+        background: var(--panel-bg) !important;
+        color: var(--text) !important;
+        border-color: var(--border) !important;
+    }
+    [data-testid="stProgressBar"] {
+        background: var(--progress-track);
+        border-radius: 999px;
+        overflow: hidden;
+    }
+    [data-testid="stProgressBar"] > div {
+        background: linear-gradient(90deg, var(--accent), #34d399) !important;
+        border-radius: 999px;
     }
     .profile-card {
         display: flex;
@@ -377,8 +472,12 @@ def load_artifacts():
         "models": joblib.load(BASELINE_MODELS_PATH),
         "preprocessors": joblib.load(PREPROCESSORS_PATH),
         "results": joblib.load(BASELINE_RESULTS_PATH),
-        "best_params": joblib.load(BEST_PARAMS_PATH) if BEST_PARAMS_PATH.exists() else {},
-        "final_model": joblib.load(FINAL_MODEL_PATH) if FINAL_MODEL_PATH.exists() else None,
+        "best_params": (
+            joblib.load(BEST_PARAMS_PATH) if BEST_PARAMS_PATH.exists() else {}
+        ),
+        "final_model": (
+            joblib.load(FINAL_MODEL_PATH) if FINAL_MODEL_PATH.exists() else None
+        ),
     }
 
 
@@ -395,11 +494,7 @@ def get_expected_features(preprocessors):
         if feature_names is not None:
             return list(feature_names)
     sample_df = load_sample_data()
-    return [
-        col
-        for col in sample_df.columns
-        if col not in {"TARGET", "SK_ID_CURR"}
-    ]
+    return [col for col in sample_df.columns if col not in {"TARGET", "SK_ID_CURR"}]
 
 
 def get_active_features(artifacts):
@@ -424,7 +519,9 @@ def transform_for_model(features, preprocessor, model_family):
     transformed = preprocessor.transform(features)
 
     if model_family == "catboost" and isinstance(transformed, pd.DataFrame):
-        object_columns = transformed.select_dtypes(include=["object", "category", "string"]).columns
+        object_columns = transformed.select_dtypes(
+            include=["object", "category", "string"]
+        ).columns
         for column in object_columns:
             transformed[column] = transformed[column].astype(str)
 
@@ -527,7 +624,9 @@ if "dark_theme" not in st.session_state:
 apply_theme(st.session_state.dark_theme)
 
 st.title("House Credit Prediction")
-st.caption("Interactive credit-default risk scoring from the selected best Home Credit model.")
+st.caption(
+    "Interactive credit-default risk scoring from the selected best Home Credit model."
+)
 
 render_artifact_status(artifacts["best_params"], model_name, artifacts["final_model"])
 
@@ -550,7 +649,11 @@ with st.sidebar:
         "High-risk threshold",
         min_value=0.05,
         max_value=0.95,
-        value=float(artifacts["final_model"].get("threshold", 0.48)) if artifacts["final_model"] else 0.50,
+        value=(
+            float(artifacts["final_model"].get("threshold", 0.48))
+            if artifacts["final_model"]
+            else 0.50
+        ),
         step=0.05,
     )
     st.divider()
@@ -578,7 +681,11 @@ with tab_score:
             st.warning("Sample data is unavailable. Use the batch tab to upload a CSV.")
             selected = pd.DataFrame()
         else:
-            id_values = sample_df["SK_ID_CURR"] if "SK_ID_CURR" in sample_df.columns else pd.Series(dtype="int64")
+            id_values = (
+                sample_df["SK_ID_CURR"]
+                if "SK_ID_CURR" in sample_df.columns
+                else pd.Series(dtype="int64")
+            )
             default_applicant_id = int(id_values.iloc[0]) if not id_values.empty else 0
             typed_applicant_id = st.number_input(
                 "Applicant ID",
@@ -627,7 +734,9 @@ with tab_score:
                 if col in selected.columns
             ]
             if preview_cols:
-                st.dataframe(selected[preview_cols], use_container_width=True, hide_index=True)
+                st.dataframe(
+                    selected[preview_cols], use_container_width=True, hide_index=True
+                )
 
 with tab_batch:
     st.subheader("Upload Applicants")
@@ -637,13 +746,20 @@ with tab_batch:
         upload_df = pd.read_csv(uploaded_file)
         missing_columns = sorted(set(expected_features) - set(upload_df.columns))
         predictions = predict_credit_risk(upload_df, model_name, artifacts)
-        scored = pd.concat([upload_df.reset_index(drop=True), predictions.reset_index(drop=True)], axis=1)
+        scored = pd.concat(
+            [upload_df.reset_index(drop=True), predictions.reset_index(drop=True)],
+            axis=1,
+        )
         scored["above_threshold"] = scored["default_probability"] >= threshold
 
         batch_cols = st.columns(3)
         batch_cols[0].metric("Rows scored", f"{len(scored):,}")
-        batch_cols[1].metric("Average probability", format_percent(scored["default_probability"].mean()))
-        batch_cols[2].metric("Above threshold", f"{int(scored['above_threshold'].sum()):,}")
+        batch_cols[1].metric(
+            "Average probability", format_percent(scored["default_probability"].mean())
+        )
+        batch_cols[2].metric(
+            "Above threshold", f"{int(scored['above_threshold'].sum()):,}"
+        )
 
         if missing_columns:
             st.warning(
@@ -651,12 +767,17 @@ with tab_batch:
             )
 
         st.dataframe(
-            scored[["default_probability", "risk_band", "above_threshold"] + list(upload_df.columns[:8])],
+            scored[
+                ["default_probability", "risk_band", "above_threshold"]
+                + list(upload_df.columns[:8])
+            ],
             use_container_width=True,
             hide_index=True,
         )
     else:
-        st.info("Upload a CSV with the same feature columns as the cleaned training data.")
+        st.info(
+            "Upload a CSV with the same feature columns as the cleaned training data."
+        )
 
 with tab_metrics:
     st.subheader("Baseline Model Comparison")
@@ -679,7 +800,9 @@ with tab_metrics:
                     "Parameters": info.get("params"),
                 }
             )
-        st.dataframe(pd.DataFrame(tuning_rows), use_container_width=True, hide_index=True)
+        st.dataframe(
+            pd.DataFrame(tuning_rows), use_container_width=True, hide_index=True
+        )
 
 with tab_eda:
     st.subheader("Project EDA")
