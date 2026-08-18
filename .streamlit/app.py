@@ -61,19 +61,29 @@ def apply_theme(dark_mode):
             "sidebar_text": "#e6edf7",
             "sidebar_muted": "#b8c5d6",
             "tab_text": "#dbe8f6",
-            "dataframe_bg": "#1e293b",
-            "dropzone_bg": "#f8fafc",
-            "dropzone_text": "#0f172a",
+            "dataframe_bg": "#1f2937",
+            "dataframe_header_bg": "#273548",
+            "dataframe_header_text": "#f8fafc",
+            "cell_even_bg": "#111827",
+            "cell_odd_bg": "#1f2937",
+            "dropzone_bg": "#0f172a",
+            "dropzone_text": "#e2e8f0",
             "input_bg": "#1e293b",
             "input_text": "#e5edf6",
             "text": "#e5edf6",
             "muted": "#a8b3c2",
-            "border": "#334155",
+            "border": "#475569",
+            "border_soft": "rgba(148, 163, 184, 0.7)",
             "accent": "#2dd4bf",
             "accent_soft": "#123a3c",
+            "focus_ring": "#7dd3fc",
             "progress_track": "#334155",
             "theme_icon": moon_icon,
             "theme_icon_rotation": "360deg",
+            "chart_1": "#60a5fa",
+            "chart_2": "#2dd4bf",
+            "chart_3": "#f87171",
+            "chart_4": "#fbbf24",
         }
     else:
         colors = {
@@ -84,19 +94,29 @@ def apply_theme(dark_mode):
             "sidebar_text": "#102338",
             "sidebar_muted": "#486176",
             "tab_text": "#0f172a",
-            "dataframe_bg": "#e5e7eb",
+            "dataframe_bg": "#f8fafc",
+            "dataframe_header_bg": "#dfeaf7",
+            "dataframe_header_text": "#162538",
+            "cell_even_bg": "#ffffff",
+            "cell_odd_bg": "#f8fafc",
             "dropzone_bg": "#ffffff",
             "dropzone_text": "#0f172a",
-            "input_bg": "#e5e7eb",
+            "input_bg": "#eef2f7",
             "input_text": "#0f172a",
             "text": "#0f172a",
             "muted": "#475569",
-            "border": "#d8e2ec",
+            "border": "#c7d2e0",
+            "border_soft": "rgba(148, 163, 184, 0.85)",
             "accent": "#0f766e",
             "accent_soft": "#f8fbfb",
+            "focus_ring": "#2563eb",
             "progress_track": "#dfeaf7",
             "theme_icon": sun_icon,
             "theme_icon_rotation": "0deg",
+            "chart_1": "#2563eb",
+            "chart_2": "#60a5fa",
+            "chart_3": "#dc2626",
+            "chart_4": "#f59e0b",
         }
 
     css_vars = "\n".join(
@@ -162,6 +182,36 @@ __CSS_VARS__
     [data-testid="stSidebar"] [data-testid="stSlider"] div {
         color: var(--sidebar-muted);
     }
+    * {
+        box-sizing: border-box;
+    }
+    button,
+    [role="button"],
+    input,
+    textarea,
+    select {
+        outline: none !important;
+        box-shadow: none !important;
+        appearance: none !important;
+    }
+    button:focus-visible,
+    input:focus-visible,
+    textarea:focus-visible,
+    select:focus-visible,
+    [role="button"]:focus-visible,
+    [data-testid="stFileUploaderDropzone"]:focus-within,
+    [data-testid="stDataFrame"]:focus-within,
+    [data-testid="stTable"]:focus-within {
+        outline: none !important;
+        box-shadow: none !important;
+        border-color: var(--border-soft) !important;
+    }
+    .vega-embed .vega-actions,
+    .vega-embed .vega-actions *,
+    .vega-embed .vega-bindings,
+    .vega-embed .vega-bindings * {
+        display: none !important;
+    }
     [data-testid="stTextInput"] input,
     [data-testid="stNumberInput"] input,
     [data-testid="stTextArea"] textarea,
@@ -175,7 +225,8 @@ __CSS_VARS__
     div[data-baseweb="select"] div[role="button"] {
         background: var(--input-bg) !important;
         color: var(--input-text) !important;
-        border-color: var(--border) !important;
+        border: 1px dashed var(--border-soft) !important;
+        border-radius: 8px;
     }
     [data-testid="stTextInput"] input::placeholder,
     [data-testid="stNumberInput"] input::placeholder,
@@ -185,7 +236,6 @@ __CSS_VARS__
     [data-testid="stFileUploader"] button *,
     div[data-baseweb="select"] * {
         color: var(--input-text) !important;
-        fill: var(--input-text) !important;
     }
     [data-testid="stNumberInput"] button {
         display: none !important;
@@ -199,16 +249,17 @@ __CSS_VARS__
         margin: 0;
     }
     [data-testid="stFileUploaderDropzone"] {
-        background: var(--soft-bg) !important;
-        border: 1px dashed var(--border) !important;
+        background: var(--dropzone-bg) !important;
+        border: 1px dashed var(--border-soft) !important;
         border-radius: 10px;
+        min-height: 3.1rem;
     }
     [data-testid="stFileUploader"] button {
-        background: linear-gradient(180deg, #f8fafc, #eef2f7) !important;
-        color: #0f172a !important;
-        border: 1px solid rgba(148, 163, 184, 0.75) !important;
+        background: linear-gradient(180deg, #2563eb, #1d4ed8) !important;
+        color: #f8fafc !important;
+        border: 1px solid rgba(37, 99, 235, 0.9) !important;
         border-radius: 8px;
-        font-weight: 500;
+        font-weight: 600;
         box-shadow: none !important;
         min-height: 1.9rem;
         padding-top: 0.22rem;
@@ -218,38 +269,84 @@ __CSS_VARS__
         line-height: 1.2;
     }
     [data-testid="stFileUploader"] button:hover {
-        border-color: rgba(15, 118, 110, 0.9) !important;
-        background: #f1f5f9 !important;
+        background: linear-gradient(180deg, #3b82f6, #2563eb) !important;
+        border-color: #93c5fd !important;
         box-shadow: none !important;
     }
     [data-testid="stFileUploaderFile"] {
         background: var(--soft-bg);
-        border: 1px solid var(--border);
+        border: 1px dashed var(--border-soft);
         border-radius: 8px;
         color: var(--text) !important;
     }
     [data-testid="stFileUploaderFile"] * {
         color: var(--text) !important;
     }
+    [data-testid="stFileUploaderFile"] svg {
+        display: none !important;
+    }
+    [data-testid="stFileUploaderDropzone"] > div,
+    [data-testid="stFileUploaderDropzone"] > div * {
+        background: transparent !important;
+        color: var(--dropzone-text) !important;
+    }
+    [data-testid="stFileUploaderDropzone"] > div svg:not([data-testid="stFileUploaderFile"] svg) {
+        fill: var(--dropzone-text) !important;
+    }
+    [data-testid="stFileUploaderDropzone"] span,
+    [data-testid="stFileUploaderDropzone"] p,
+    [data-testid="stFileUploaderDropzone"] small,
+    [data-testid="stFileUploaderDropzone"] label,
+    [data-testid="stFileUploaderDropzone"] div {
+        background: transparent !important;
+        color: var(--dropzone-text) !important;
+    }
+    [data-testid="stFileUploaderDropzone"] [data-testid="stBaseButton-secondary"],
+    [data-testid="stFileUploaderDropzone"] button {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        color: var(--dropzone-text) !important;
+    }
+    [data-testid="stFileUploaderDropzone"] > div > div {
+        background: transparent !important;
+    }
     div[data-testid="stDataFrame"],
     div[data-testid="stTable"],
     .stDataFrame {
         background: var(--dataframe-bg);
-        border: 1px solid var(--border);
+        border: 1px dashed var(--border-soft);
         border-radius: 10px;
         overflow: hidden;
     }
+    .static-table {
+        background: var(--dataframe-bg);
+        border: 1px dashed var(--border-soft);
+        border-radius: 10px;
+        overflow: auto;
+        margin: 0.4rem 0 1rem;
+    }
+    .static-table table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+    }
+    .static-table th,
+    .static-table td {
+        padding: 0.45rem 0.65rem;
+        white-space: nowrap;
+    }
     div[data-testid="stDataFrame"],
     div[data-testid="stDataFrame"] * {
-        --gdg-bg-cell: var(--dataframe-bg) !important;
-        --gdg-bg-cell-medium: var(--dataframe-bg) !important;
-        --gdg-bg-header: var(--dataframe-bg) !important;
-        --gdg-bg-header-has-focus: var(--dataframe-bg) !important;
-        --gdg-bg-header-hovered: var(--dataframe-bg) !important;
-        --gdg-bg-group-header: var(--dataframe-bg) !important;
-        --gdg-bg-group-header-hovered: var(--dataframe-bg) !important;
-        --gdg-text-header: var(--text) !important;
-        --gdg-text-group-header: var(--text) !important;
+        --gdg-bg-cell: var(--cell-even-bg) !important;
+        --gdg-bg-cell-medium: var(--cell-odd-bg) !important;
+        --gdg-bg-header: var(--dataframe-header-bg) !important;
+        --gdg-bg-header-has-focus: var(--dataframe-header-bg) !important;
+        --gdg-bg-header-hovered: var(--dataframe-header-bg) !important;
+        --gdg-bg-group-header: var(--dataframe-header-bg) !important;
+        --gdg-bg-group-header-hovered: var(--dataframe-header-bg) !important;
+        --gdg-text-header: var(--dataframe-header-text) !important;
+        --gdg-text-group-header: var(--dataframe-header-text) !important;
     }
     div[data-testid="stDataFrame"] > div,
     div[data-testid="stTable"] > div {
@@ -260,20 +357,38 @@ __CSS_VARS__
         background: var(--dataframe-bg);
         color: var(--text);
     }
+    div[data-testid="stDataFrame"] thead th,
+    div[data-testid="stDataFrame"] thead tr,
+    div[data-testid="stTable"] thead th,
+    div[data-testid="stTable"] thead tr {
+        background: var(--dataframe-header-bg) !important;
+        color: var(--dataframe-header-text) !important;
+        border-bottom: 1px solid var(--border-soft) !important;
+        font-weight: 700 !important;
+    }
+    div[data-testid="stDataFrame"] tbody tr:nth-child(odd) td,
+    div[data-testid="stTable"] tbody tr:nth-child(odd) td {
+        background: var(--cell-odd-bg) !important;
+    }
+    div[data-testid="stDataFrame"] tbody tr:nth-child(even) td,
+    div[data-testid="stTable"] tbody tr:nth-child(even) td {
+        background: var(--cell-even-bg) !important;
+    }
     div[data-testid="stDataFrame"] th,
     div[data-testid="stDataFrame"] td,
     div[data-testid="stTable"] th,
     div[data-testid="stTable"] td {
-        background: var(--dataframe-bg) !important;
+        background: transparent !important;
         color: var(--text) !important;
-        border-color: var(--border) !important;
+        border-color: var(--border-soft) !important;
     }
-    [data-testid="stProgressBar"] {
-        background: var(--progress-track);
+    [data-testid="stProgress"] [data-baseweb="progress-bar"] {
+        background: #ffffff !important;
+        border: 1px solid var(--border);
         border-radius: 999px;
         overflow: hidden;
     }
-    [data-testid="stProgressBar"] > div {
+    [data-testid="stProgress"] [data-baseweb="progress-bar"] > div {
         background: linear-gradient(90deg, var(--accent), #34d399) !important;
         border-radius: 999px;
     }
@@ -356,16 +471,11 @@ __CSS_VARS__
     [data-testid="stFileUploaderDropzone"] span,
     [data-testid="stFileUploaderDropzone"] p {
         color: var(--dropzone-text) !important;
-        fill: var(--dropzone-text) !important;
     }
     [data-testid="stFileUploader"] button {
         background: #e5e7eb;
         border-color: #cbd5e1;
         color: var(--dropzone-text) !important;
-    }
-    [data-testid="stFileUploaderFile"] svg,
-    [data-testid="stFileUploaderFile"] button {
-        display: none;
     }
     [data-testid="stFileUploaderFile"] {
         color: var(--dropzone-text) !important;
@@ -379,13 +489,12 @@ __CSS_VARS__
     [data-testid="stElementToolbar"],
     [data-testid="stElementToolbar"] button {
         background: #ffffff;
-        color: #0f172a !important;
     }
+    [data-testid="stElementToolbar"],
     [data-testid="stElementToolbar"] *,
     div[role="tooltip"],
     div[role="tooltip"] * {
         color: #0f172a !important;
-        fill: #0f172a !important;
     }
     div[role="tooltip"] {
         background: #ffffff !important;
@@ -608,21 +717,55 @@ def format_percent(value):
 
 
 def style_dataframe(dataframe, dark_mode):
-    background = "#1e293b" if dark_mode else "#e5e7eb"
+    header_bg = "#273548" if dark_mode else "#dfeaf7"
+    header_text = "#f8fafc" if dark_mode else "#162538"
+    cell_bg = "#111827" if dark_mode else "#ffffff"
+    alt_cell_bg = "#1f2937" if dark_mode else "#f8fafc"
     text = "#e5edf6" if dark_mode else "#0f172a"
-    return (
-        dataframe.style.set_properties(
-            **{"background-color": background, "color": text}
+    border = "rgba(148, 163, 184, 0.75)"
+    return dataframe.style.set_properties(
+        **{"background-color": cell_bg, "color": text, "border": f"1px solid {border}"}
+    ).set_table_styles(
+        [
+            {
+                "selector": "th",
+                "props": [
+                    ("background-color", header_bg),
+                    ("color", header_text),
+                    ("font-weight", "700"),
+                    ("border", f"1px solid {border}"),
+                ],
+            },
+            {
+                "selector": "tbody tr:nth-child(odd) td",
+                "props": [("background-color", alt_cell_bg)],
+            },
+            {
+                "selector": "tbody tr:nth-child(even) td",
+                "props": [("background-color", cell_bg)],
+            },
+            {
+                "selector": "td",
+                "props": [("border", f"1px solid {border}")],
+            },
+        ]
+    ).hide(axis="index")
+
+
+def render_static_table(styler, max_height=None):
+    """Render a pandas Styler as real HTML instead of st.dataframe's canvas
+    grid. st.dataframe (Glide Data Grid) ignores Styler table-level styles
+    like header background/color, so header theming never applied there.
+    This guarantees the header colors actually render."""
+    html = styler.to_html()
+    if max_height:
+        html = (
+            f'<div class="static-table" style="max-height:{max_height}px; '
+            f'overflow-y:auto;">{html}</div>'
         )
-        .set_table_styles(
-            [
-                {
-                    "selector": "th",
-                    "props": [("background-color", background), ("color", text)],
-                }
-            ]
-        )
-    )
+    else:
+        html = f'<div class="static-table">{html}</div>'
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def render_artifact_status(best_params, deployed_model_name, final_model):
@@ -777,9 +920,8 @@ with tab_score:
                 if col in selected.columns
             ]
             if preview_cols:
-                st.dataframe(
-                    style_dataframe(selected[preview_cols], st.session_state.dark_theme),
-                    hide_index=True,
+                render_static_table(
+                    style_dataframe(selected[preview_cols], st.session_state.dark_theme)
                 )
 
 with tab_batch:
@@ -810,7 +952,7 @@ with tab_batch:
                 f"{len(missing_columns)} expected feature(s) were missing and filled with blank values."
             )
 
-        st.dataframe(
+        render_static_table(
             style_dataframe(
                 scored[
                     ["default_probability", "risk_band", "above_threshold"]
@@ -818,7 +960,7 @@ with tab_batch:
                 ],
                 st.session_state.dark_theme,
             ),
-            hide_index=True,
+            max_height=480,
         )
     else:
         st.info(
@@ -830,12 +972,15 @@ with tab_metrics:
     display_results = results.copy()
     for column in ["ACCURACY", "PRECISION", "RECALL", "F1", "ROC-AUC"]:
         display_results[column] = display_results[column].map(format_percent)
-    st.dataframe(
-        style_dataframe(display_results, st.session_state.dark_theme), hide_index=True
-    )
+    render_static_table(style_dataframe(display_results, st.session_state.dark_theme))
 
     chart_data = results.set_index("Models")[["ROC-AUC", "RECALL", "PRECISION", "F1"]]
-    st.bar_chart(chart_data)
+    chart_palette = (
+        ["#60a5fa", "#2dd4bf", "#f87171", "#fbbf24"]
+        if st.session_state.dark_theme
+        else ["#2563eb", "#60a5fa", "#dc2626", "#f59e0b"]
+    )
+    st.bar_chart(chart_data, color=chart_palette)
 
     if artifacts["best_params"]:
         st.subheader("Saved Tuning Summary")
@@ -848,9 +993,8 @@ with tab_metrics:
                     "Parameters": info.get("params"),
                 }
             )
-        st.dataframe(
-            style_dataframe(pd.DataFrame(tuning_rows), st.session_state.dark_theme),
-            hide_index=True,
+        render_static_table(
+            style_dataframe(pd.DataFrame(tuning_rows), st.session_state.dark_theme)
         )
 
 with tab_eda:
