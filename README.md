@@ -2,6 +2,8 @@
 
 A machine learning project for predicting home-credit default risk from applicant, bureau, previous application, installment, credit card, and POS cash-balance features. The repository includes data preparation scripts, baseline model training, Optuna tuning, final model export, exploratory analysis plots, and an interactive Streamlit dashboard for applicant-level and batch risk scoring.
 
+🚀 Live Link: [House Credit Prediction](https://house-credit-prediction-ekkzlbulud7ynveam6usbf.streamlit.app/)
+
 ## 📌 Overview
 
 This project builds a credit-risk classification workflow around the Home Credit dataset. The target is binary:
