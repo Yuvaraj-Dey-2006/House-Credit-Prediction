@@ -61,10 +61,11 @@ def apply_theme(dark_mode):
             "sidebar_text": "#e6edf7",
             "sidebar_muted": "#b8c5d6",
             "tab_text": "#dbe8f6",
+            "dataframe_bg": "#1e293b",
             "dropzone_bg": "#f8fafc",
             "dropzone_text": "#0f172a",
-            "input_bg": "#f8fafc",
-            "input_text": "#0f172a",
+            "input_bg": "#1e293b",
+            "input_text": "#e5edf6",
             "text": "#e5edf6",
             "muted": "#a8b3c2",
             "border": "#334155",
@@ -83,9 +84,10 @@ def apply_theme(dark_mode):
             "sidebar_text": "#102338",
             "sidebar_muted": "#486176",
             "tab_text": "#0f172a",
+            "dataframe_bg": "#e5e7eb",
             "dropzone_bg": "#ffffff",
             "dropzone_text": "#0f172a",
-            "input_bg": "#ffffff",
+            "input_bg": "#e5e7eb",
             "input_text": "#0f172a",
             "text": "#0f172a",
             "muted": "#475569",
@@ -185,6 +187,17 @@ __CSS_VARS__
         color: var(--input-text) !important;
         fill: var(--input-text) !important;
     }
+    [data-testid="stNumberInput"] button {
+        display: none !important;
+    }
+    [data-testid="stNumberInput"] input {
+        -moz-appearance: textfield;
+    }
+    [data-testid="stNumberInput"] input::-webkit-inner-spin-button,
+    [data-testid="stNumberInput"] input::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
     [data-testid="stFileUploaderDropzone"] {
         background: var(--soft-bg) !important;
         border: 1px dashed var(--border) !important;
@@ -221,25 +234,37 @@ __CSS_VARS__
     div[data-testid="stDataFrame"],
     div[data-testid="stTable"],
     .stDataFrame {
-        background: var(--panel-bg);
+        background: var(--dataframe-bg);
         border: 1px solid var(--border);
         border-radius: 10px;
         overflow: hidden;
     }
+    div[data-testid="stDataFrame"],
+    div[data-testid="stDataFrame"] * {
+        --gdg-bg-cell: var(--dataframe-bg) !important;
+        --gdg-bg-cell-medium: var(--dataframe-bg) !important;
+        --gdg-bg-header: var(--dataframe-bg) !important;
+        --gdg-bg-header-has-focus: var(--dataframe-bg) !important;
+        --gdg-bg-header-hovered: var(--dataframe-bg) !important;
+        --gdg-bg-group-header: var(--dataframe-bg) !important;
+        --gdg-bg-group-header-hovered: var(--dataframe-bg) !important;
+        --gdg-text-header: var(--text) !important;
+        --gdg-text-group-header: var(--text) !important;
+    }
     div[data-testid="stDataFrame"] > div,
     div[data-testid="stTable"] > div {
-        background: var(--panel-bg);
+        background: var(--dataframe-bg);
     }
     div[data-testid="stDataFrame"] table,
     div[data-testid="stTable"] table {
-        background: var(--panel-bg);
+        background: var(--dataframe-bg);
         color: var(--text);
     }
     div[data-testid="stDataFrame"] th,
     div[data-testid="stDataFrame"] td,
     div[data-testid="stTable"] th,
     div[data-testid="stTable"] td {
-        background: var(--panel-bg) !important;
+        background: var(--dataframe-bg) !important;
         color: var(--text) !important;
         border-color: var(--border) !important;
     }
@@ -582,6 +607,24 @@ def format_percent(value):
     return f"{value:.1%}"
 
 
+def style_dataframe(dataframe, dark_mode):
+    background = "#1e293b" if dark_mode else "#e5e7eb"
+    text = "#e5edf6" if dark_mode else "#0f172a"
+    return (
+        dataframe.style.set_properties(
+            **{"background-color": background, "color": text}
+        )
+        .set_table_styles(
+            [
+                {
+                    "selector": "th",
+                    "props": [("background-color", background), ("color", text)],
+                }
+            ]
+        )
+    )
+
+
 def render_artifact_status(best_params, deployed_model_name, final_model):
     if final_model:
         text = (
@@ -735,7 +778,8 @@ with tab_score:
             ]
             if preview_cols:
                 st.dataframe(
-                    selected[preview_cols], use_container_width=True, hide_index=True
+                    style_dataframe(selected[preview_cols], st.session_state.dark_theme),
+                    hide_index=True,
                 )
 
 with tab_batch:
@@ -767,11 +811,13 @@ with tab_batch:
             )
 
         st.dataframe(
-            scored[
-                ["default_probability", "risk_band", "above_threshold"]
-                + list(upload_df.columns[:8])
-            ],
-            use_container_width=True,
+            style_dataframe(
+                scored[
+                    ["default_probability", "risk_band", "above_threshold"]
+                    + list(upload_df.columns[:8])
+                ],
+                st.session_state.dark_theme,
+            ),
             hide_index=True,
         )
     else:
@@ -784,7 +830,9 @@ with tab_metrics:
     display_results = results.copy()
     for column in ["ACCURACY", "PRECISION", "RECALL", "F1", "ROC-AUC"]:
         display_results[column] = display_results[column].map(format_percent)
-    st.dataframe(display_results, use_container_width=True, hide_index=True)
+    st.dataframe(
+        style_dataframe(display_results, st.session_state.dark_theme), hide_index=True
+    )
 
     chart_data = results.set_index("Models")[["ROC-AUC", "RECALL", "PRECISION", "F1"]]
     st.bar_chart(chart_data)
@@ -801,7 +849,8 @@ with tab_metrics:
                 }
             )
         st.dataframe(
-            pd.DataFrame(tuning_rows), use_container_width=True, hide_index=True
+            style_dataframe(pd.DataFrame(tuning_rows), st.session_state.dark_theme),
+            hide_index=True,
         )
 
 with tab_eda:
@@ -813,6 +862,6 @@ with tab_eda:
             options=plot_paths,
             format_func=lambda path: path.stem,
         )
-        st.image(str(selected_plot), use_container_width=True)
+        st.image(str(selected_plot), width="stretch")
     else:
         st.info("No EDA plot images were found.")
