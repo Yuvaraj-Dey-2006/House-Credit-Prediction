@@ -18,6 +18,7 @@ The model pipeline focuses on imbalanced classification and evaluates models usi
 - 🔁 Model-specific preprocessing pipelines saved for reproducible inference
 - 🎯 Optuna hyperparameter tuning for the top baseline models by ROC-AUC
 - 📦 Final CatBoost training script for deployment artifact creation
+- ☁️ Runtime download of the processed dataset and model artifacts from a private Hugging Face dataset repo, so no dataset or model files are committed to GitHub
 - 🖥️ Streamlit dashboard with:
   - 🔎 Single applicant scoring by applicant ID
   - 📄 Batch CSV upload and risk scoring
@@ -33,8 +34,9 @@ House Credit Prediction/
 |-- .streamlit/
 |   |-- app.py
 |   |-- config.toml
+|   |-- secrets.toml        # gitignored 
 |   `-- assets/
-|-- Artifacts/
+|-- Artifacts/               # gitignored — downloaded at runtime from Hugging Face
 |   |-- baseline_models.joblib
 |   |-- base_result.joblib
 |   |-- best_params.joblib
@@ -45,7 +47,7 @@ House Credit Prediction/
 |-- EDA/
 |   |-- home-credit-EDA.ipynb
 |   `-- Plots/
-|-- HCP kaggle Datasets/
+|-- HCP kaggle Datasets/     # datasets inside it are gitignored
 |   `-- final_dataset_maker.py
 |-- Model Training/
 |   |-- baseline_training.py
@@ -53,7 +55,7 @@ House Credit Prediction/
 |   |-- data_cleaning.py
 |   |-- final_training.py
 |   `-- tune_models.py
-|-- Processed Datasets/
+|-- Processed Datasets/      # gitignored — downloaded at runtime from Hugging Face
 |   |-- final_train.csv
 |   |-- final_test.csv
 |   |-- final_train_cleaned.csv
@@ -67,7 +69,7 @@ House Credit Prediction/
 
 - 🐍 Python 3.10 or newer
 - 📦 pip
-- 💾 Local copies of the processed datasets and generated model artifacts
+- 🤗 A Hugging Face account with a private dataset repo hosting the processed CSV and model artifacts (see below) — only needed if you want the app to auto-download data/artifacts instead of placing them locally yourself
 
 Install the Python dependencies:
 
@@ -75,13 +77,13 @@ Install the Python dependencies:
 pip install -r requirements.txt
 ```
 
-The main dependencies are Streamlit, pandas, NumPy, scikit-learn, joblib, XGBoost, LightGBM, and CatBoost.
+The main dependencies are Streamlit, pandas, NumPy, scikit-learn, joblib, XGBoost, LightGBM, CatBoost, and huggingface_hub.
 
 ## 📁 Data and Artifacts
 
-The raw Home Credit datasets are not included in this repository because of size and competition data restrictions. Download the dataset directly from the official Kaggle competition page:
+The raw Home Credit datasets are not included in this repository because of size and competition data restrictions. Download the raw dataset directly from the official Kaggle competition page:
 
-https://www.kaggle.com/competitions/home-credit-default-risk/data
+[Kaggle Datasets | Home Credit Default Risk](https://www.kaggle.com/competitions/home-credit-default-risk/overview)
 
 After downloading, place the Kaggle CSV files inside:
 
@@ -89,16 +91,14 @@ After downloading, place the Kaggle CSV files inside:
 HCP kaggle Datasets/
 ```
 
-Large datasets and serialized model files are excluded from version control through `.gitignore`. To run the full workflow or dashboard, keep these files locally:
+The **processed/cleaned dataset and all trained model artifacts are also excluded from version control**, since they're either derived from the restricted Kaggle competition data or too large for a plain GitHub commit. Instead of committing them, they're hosted in a **private Hugging Face dataset repo** and downloaded automatically at runtime the first time the app needs them, then cached locally:
 
-- `Processed Datasets/final_train.csv`
-- `Processed Datasets/final_test.csv`
 - `Processed Datasets/final_train_cleaned.csv`
 - `Artifacts/baseline_models.joblib`
 - `Artifacts/preprocessors.joblib`
 - `Artifacts/base_result.joblib`
-
-The Streamlit app requires the baseline model, preprocessor, and baseline result artifacts. If they are missing, run the training workflow before launching the app.
+- `Artifacts/best_params.joblib` (optional)
+- `Artifacts/final_model.joblib` (optional, but required for the app to score with the tuned final model rather than a baseline model)
 
 ## 🚀 Reproducing the Pipeline
 
@@ -154,6 +154,8 @@ python "Model Training/tune_models.py"
 python "Model Training/final_training.py"
 ```
 
+10. ☁️ Upload the resulting files in `Processed Datasets/` and `Artifacts/` to your private Hugging Face dataset repo if you want other deployments (or a fresh clone) to auto-download them instead of running the full pipeline again.
+
 ## 🖥️ Running the Streamlit App
 
 Start the dashboard from the project root:
@@ -184,10 +186,13 @@ The pipeline handles class imbalance with class weights or model-specific balanc
 
 The tuning stage uses Optuna and only searches the top two baseline models by ROC-AUC to keep the search focused. Tuning results are saved to `Artifacts/best_params.joblib`.
 
+The final deployment model is a CatBoost classifier refit on the entire cleaned training dataset (see `Model Training/final_training.py`), using any tuned hyperparameters found in `Artifacts/best_params.joblib`.
+
 ## 📝 Notes
 
-- ⚠️ The dashboard currently scores with the saved baseline model artifacts loaded from `Artifacts/baseline_models.joblib`.
+- ✅ The dashboard scores with the final tuned CatBoost model (`Artifacts/final_model.joblib`) when it's available, and falls back to the best-performing saved baseline model artifact otherwise.
 - 🧩 Missing feature columns in uploaded batch files are filled with blank values before preprocessing.
+- 🔐 No dataset or model artifact content is stored in this GitHub repository — everything under `Processed Datasets/` and `Artifacts/` is gitignored and fetched at runtime only after you ran each file in correct order.
 - ✅ Model predictions are decision-support outputs and should not be used as the sole basis for real credit decisions without validation, monitoring, and fairness review.
 
 ## 📜 License
