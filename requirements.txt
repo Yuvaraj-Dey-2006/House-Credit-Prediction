@@ -6,3 +6,4 @@ joblib
 xgboost
 lightgbm
 catboost
+huggingface_hub
