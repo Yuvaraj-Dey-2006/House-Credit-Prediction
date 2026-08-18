@@ -173,6 +173,8 @@ The app opens in the browser and provides four main views:
 
 A sample upload file is included at `sample_batch_applicants.csv`.
 
+> ⚠️NOTE: You can also run the `final_test_cleaned.csv` but it will take a lot of your time due to its **300K+ data** and **230+ features** so if you want to use the `final_test_cleaned.csv`, **divide it into small proportions** and upload it on `Batch Score` to see the results.
+
 ## 🧠 Model Details
 
 The baseline training stage compares:
