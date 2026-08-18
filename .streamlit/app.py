@@ -609,15 +609,26 @@ __CSS_VARS__
 
 
 def ensure_model_artifacts():
-    """Download any missing model artifact files from the private HF
-    repo, same pattern as ensure_sample_data(). Runs before
-    load_artifacts() checks for required files."""
+    """Download missing model artifacts from the private Hugging Face
+    dataset repository into the local Artifacts directory."""
+
     token = st.secrets.get("HF_TOKEN")
+
     if not token:
+        st.error("HF_TOKEN is not configured in Streamlit Secrets.")
         return
 
-    all_artifacts = {**HF_REQUIRED_ARTIFACTS, **HF_OPTIONAL_ARTIFACTS}
-    missing = {path: name for path, name in all_artifacts.items() if not path.exists()}
+    all_artifacts = {
+        **HF_REQUIRED_ARTIFACTS,
+        **HF_OPTIONAL_ARTIFACTS,
+    }
+
+    missing = {
+        local_path: remote_filename
+        for local_path, remote_filename in all_artifacts.items()
+        if not local_path.exists()
+    }
+
     if not missing:
         return
 
@@ -625,21 +636,27 @@ def ensure_model_artifacts():
         from huggingface_hub import hf_hub_download
 
         ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+
         for local_path, remote_filename in missing.items():
             try:
-                downloaded_path = hf_hub_download(
+                hf_hub_download(
                     repo_id=HF_ARTIFACT_REPO,
                     filename=remote_filename,
                     repo_type="dataset",
                     token=token,
+                    local_dir=str(ARTIFACTS_DIR),
                 )
-                Path(downloaded_path).replace(local_path)
-            except Exception:
-                # Optional artifacts may genuinely not exist in the repo;
-                # required ones will surface as a clear error in load_artifacts().
+
+            except Exception as exc:
+                if local_path in HF_REQUIRED_ARTIFACTS:
+                    st.error(
+                        f"Could not download required artifact "
+                        f"`{remote_filename}`: {exc}"
+                    )
                 continue
+
     except Exception as exc:
-        st.warning(f"Could not fetch model artifacts: {exc}")
+        st.error(f"Could not connect to Hugging Face: {exc}")
 
 
 @st.cache_resource(show_spinner="Loading trained artifacts...")
@@ -668,32 +685,32 @@ def load_artifacts():
 
 
 def ensure_sample_data():
-    """Download the processed sample CSV from a private Hugging Face
-    dataset repo on first run, caching it to the (gitignored) local
-    Processed Datasets folder. No dataset content is ever committed
-    to the repo — it's fetched at runtime using a read-only token
-    stored in Streamlit secrets."""
+    """Download the processed sample CSV from the private Hugging Face
+    dataset repository into the local Processed Datasets folder."""
+
     if SAMPLE_DATA_PATH.exists():
         return
 
     token = st.secrets.get("HF_TOKEN")
+
     if not token:
-        return  # no token configured; app will just run without sample data
+        return
 
     try:
         from huggingface_hub import hf_hub_download
 
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        downloaded_path = hf_hub_download(
+
+        hf_hub_download(
             repo_id=HF_DATASET_REPO,
             filename=HF_DATASET_FILENAME,
             repo_type="dataset",
             token=token,
+            local_dir=str(DATA_DIR),
         )
-        Path(downloaded_path).replace(SAMPLE_DATA_PATH)
+
     except Exception as exc:
         st.warning(f"Could not fetch sample dataset: {exc}")
-
 
 @st.cache_data(show_spinner="Reading sample applicants...")
 def load_sample_data(n_rows=5000):
